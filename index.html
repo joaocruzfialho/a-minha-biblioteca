@@ -10,6 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <style>
         :root {
@@ -276,6 +277,20 @@
         .btn-fetch-summary { background: var(--accent); color: #333; border: none; padding: 3px 10px; border-radius: 6px; font-size: 0.95em; cursor: pointer; font-weight: 600; margin-left: 6px; transition: 0.2s; font-family: inherit; }
         .btn-fetch-summary:hover { background: var(--accent-hover); }
 
+        /* Scanner */
+        .scanner-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; flex-direction: column; align-items: center; justify-content: center; }
+        .scanner-modal.visible { display: flex; }
+        .scanner-header { color: white; text-align: center; padding: 15px; width: 100%; }
+        .scanner-header h3 { margin-bottom: 5px; }
+        .scanner-header p { font-size: 0.85em; opacity: 0.7; }
+        #scannerView { width: 100%; max-width: 500px; border-radius: 12px; overflow: hidden; }
+        .scanner-close { position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.2); border: none; color: white; width: 44px; height: 44px; border-radius: 50%; font-size: 1.5em; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; }
+        .scanner-close:hover { background: rgba(255,255,255,0.3); }
+        .scanner-result { color: white; text-align: center; padding: 15px; font-size: 0.9em; }
+        .scanner-result .found { color: var(--accent); font-weight: 700; font-size: 1.1em; }
+        .btn-scanner { background: linear-gradient(135deg, var(--accent), #e67e22); color: #333; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 0.9em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.3s; font-family: inherit; }
+        .btn-scanner:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+
         /* ===== EMPTY STATE ===== */
         .empty-state { text-align: center; padding: 50px 20px; color: var(--text-light); }
         .empty-state .icon { font-size: 3.5em; margin-bottom: 10px; opacity: 0.4; }
@@ -386,8 +401,9 @@
             <div class="api-search-row">
                 <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}">
                 <button class="btn btn-accent" onclick="searchBooks()">Pesquisar</button>
+                <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 Scan</button>
             </div>
-            <p class="api-hint">Pesquisa edicoes em portugues - seleciona para preencher automaticamente</p>
+            <p class="api-hint">Pesquisa por nome, ISBN, ou usa o scanner para ler o codigo de barras do livro</p>
             <div class="api-results" id="apiResults"></div>
         </div>
 
@@ -511,6 +527,17 @@
         <button class="nav-item" onclick="setMobileTab(this,'emprestados')"><span class="nav-icon">🤝</span>Emprestados</button>
         <button class="nav-item" onclick="setMobileTab(this,'favorites')"><span class="nav-icon">❤️</span>Favoritos</button>
     </div>
+</div>
+
+<!-- BARCODE SCANNER -->
+<div class="scanner-modal" id="scannerModal">
+    <button class="scanner-close" onclick="closeScanner()">&times;</button>
+    <div class="scanner-header">
+        <h3>Scanner de Codigo de Barras</h3>
+        <p>Aponta a camera para o codigo de barras (ISBN) do livro</p>
+    </div>
+    <div id="scannerView"></div>
+    <div class="scanner-result" id="scannerResult"></div>
 </div>
 
 <!-- TOAST CONTAINER -->
@@ -1699,6 +1726,80 @@ function dismissOnboarding() { document.getElementById('onboarding').style.displ
     }
 })();
 function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
+
+// ============ BARCODE SCANNER ============
+var html5QrScanner = null;
+var scannerProcessing = false;
+
+function openScanner() {
+    // Garantir que o formulario esta visivel
+    var form = document.getElementById('addBookForm');
+    if (!form.classList.contains('visible')) {
+        clearForm();
+        form.classList.add('visible');
+    }
+
+    var modal = document.getElementById('scannerModal');
+    var resultDiv = document.getElementById('scannerResult');
+    resultDiv.innerHTML = '';
+    modal.classList.add('visible');
+    scannerProcessing = false;
+
+    html5QrScanner = new Html5Qrcode('scannerView');
+
+    var config = {
+        fps: 10,
+        qrbox: { width: 280, height: 120 },
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128
+        ]
+    };
+
+    html5QrScanner.start(
+        { facingMode: 'environment' },
+        config,
+        function onScanSuccess(decodedText) {
+            if (scannerProcessing) return;
+            scannerProcessing = true;
+
+            // Normalizar: remover prefixo 978 check digit issues
+            var isbn = decodedText.replace(/[^0-9X]/gi, '');
+            resultDiv.innerHTML = '<div class="found">Codigo encontrado: ' + isbn + '</div><p>A procurar livro...</p>';
+
+            // Vibrar (feedback tactil)
+            if (navigator.vibrate) navigator.vibrate(200);
+
+            // Parar scanner e procurar o livro
+            setTimeout(function() {
+                closeScanner();
+                // Preencher campo ISBN e pesquisar
+                document.getElementById('apiQuery').value = isbn;
+                searchBooks();
+            }, 800);
+        },
+        function onScanFailure() {
+            // Silencioso - scan continuo
+        }
+    ).catch(function(err) {
+        console.error('Erro ao iniciar scanner:', err);
+        resultDiv.innerHTML = '<p style="color:var(--danger);">Nao foi possivel aceder a camera.<br>Verifica as permissoes do browser.</p>';
+    });
+}
+
+function closeScanner() {
+    var modal = document.getElementById('scannerModal');
+    modal.classList.remove('visible');
+    if (html5QrScanner) {
+        html5QrScanner.stop().then(function() {
+            html5QrScanner.clear();
+        }).catch(function() {});
+        html5QrScanner = null;
+    }
+}
 
 // ============ INIT ============
 renderBooks();
