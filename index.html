@@ -394,6 +394,10 @@
             <div class="form-group"><label>Titulo *</label><input type="text" id="title" placeholder="Nome do livro"></div>
             <div class="form-group"><label>Autor</label><input type="text" id="author" placeholder="Nome do autor"></div>
         </div>
+        <div class="form-row">
+            <div class="form-group"><label>Subtitulo</label><input type="text" id="subtitle" placeholder="Subtitulo do livro"></div>
+            <div class="form-group"><label>Editora</label><input type="text" id="publisherMain" placeholder="Ex: Porto Editora, Leya..."></div>
+        </div>
 
         <div class="form-group">
             <label>Capa do livro</label>
@@ -653,11 +657,13 @@ function renderBooks() {
             <div class="card-content">
                 <span class="card-genre" style="color:${catColor}">${esc(book.genre || 'Geral')}</span>
                 <div class="card-title">${title}</div>
+                ${book.subtitle ? `<div style="font-size:0.8em;color:var(--text-light);margin-bottom:2px;font-style:italic;">${esc(book.subtitle)}</div>` : ''}
                 <div class="card-author">${author}</div>
                 <div class="rating-stars" onclick="event.stopPropagation()">${renderStarsInteractive(book.rating||0, idx)}</div>
                 <div class="card-meta">
                     ${book.year ? `<span>${book.year}</span>` : ''}
                     ${book.pages ? `<span>${book.pages}p</span>` : ''}
+                    ${book.publisherMain ? `<span>${esc(book.publisherMain)}</span>` : ''}
                     ${book.series ? `<span>${esc(book.series)}</span>` : ''}
                 </div>
                 <p class="card-summary">${esc((book.summary||'').substring(0,90))}${(book.summary||'').length > 90 ? '...' : ''}</p>
@@ -772,7 +778,7 @@ function editGoal() {
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ============ CRUD ============
-const FIELDS = ['title','author','cover','summary','genre','rating','readingStatus','pages','pagesRead','year','publisher','isbn','language','series','location','condition','price','acquiredDate','tags','notes','readStart','readEnd'];
+const FIELDS = ['title','author','subtitle','publisherMain','cover','summary','genre','rating','readingStatus','pages','pagesRead','year','publisher','isbn','language','series','location','condition','price','acquiredDate','tags','notes','readStart','readEnd'];
 
 function saveBook() {
     const title = document.getElementById('title').value.trim();
@@ -904,8 +910,10 @@ function showDetail(idx) {
         ${b.cover ? `<img src="${esc(b.cover)}" style="width:100%;max-height:350px;object-fit:contain;border-radius:10px;margin-bottom:12px;background:#f5f5f5;" onerror="this.style.display='none'">` : ''}
         <span class="card-genre" style="color:${getCategoryColor(b.genre)}">${esc(b.genre||'Geral')}</span>
         <h2 style="margin:5px 0;font-size:1.3em;">${esc(b.title)}</h2>
+        ${b.subtitle ? `<p style="font-size:0.9em;color:var(--text-light);font-style:italic;margin-bottom:3px;">${esc(b.subtitle)}</p>` : ''}
         ${b.series ? `<p style="font-size:0.85em;color:var(--accent);">${esc(b.series)}</p>` : ''}
         <p style="color:var(--text-light);margin-bottom:3px;">${esc(b.author||'Autor desconhecido')}</p>
+        ${b.publisherMain ? `<p style="font-size:0.85em;color:var(--text-light);">${esc(b.publisherMain)}</p>` : ''}
         <div class="rating-stars" style="margin-bottom:8px;">${'★'.repeat(b.rating||0)}${'☆'.repeat(5-(b.rating||0))}</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.82em;color:var(--text-light);margin-bottom:10px;">
             ${b.year ? `<span>📅 ${b.year}</span>` : ''}
@@ -1211,11 +1219,12 @@ async function fillFromOLBibkey(book, isbn, rd) {
     var summary = await fetchOLDescription(book.key || '', book.title, authors);
 
     fillForm({
-        title: book.title || '', author: authors, cover: fixUrl(coverUrl),
+        title: book.title || '', subtitle: book.subtitle || '',
+        author: authors, cover: fixUrl(coverUrl),
         summary: stripHtml(summary), genre: subjects,
         pages: book.number_of_pages || '',
         year: book.publish_date ? book.publish_date.replace(/.*(\d{4}).*/, '$1') : '',
-        publisher: publishers, isbn: isbn, language: 'Portugues'
+        publisher: publishers, publisherMain: publishers, isbn: isbn, language: 'Portugues'
     });
     rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Livro encontrado! Ajusta e guarda.</div>';
     setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
@@ -1230,11 +1239,12 @@ async function fillFromOLSearch(doc, isbn, rd) {
     var summary = await fetchOLDescription(doc.key || '', doc.title, authors);
 
     fillForm({
-        title: doc.title || '', author: authors, cover: coverUrl,
+        title: doc.title || '', subtitle: doc.subtitle || '',
+        author: authors, cover: coverUrl,
         summary: stripHtml(summary), genre: subjects,
         pages: doc.number_of_pages_median || '',
         year: doc.first_publish_year || '',
-        publisher: publishers, isbn: isbn || '', language: 'Portugues'
+        publisher: publishers, publisherMain: publishers, isbn: isbn || '', language: 'Portugues'
     });
     rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Livro encontrado! Ajusta e guarda.</div>';
     setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
@@ -1361,11 +1371,12 @@ async function selectOLResult(doc) {
         var summary = await fetchOLDescription(doc.key || '', doc.title, authors);
 
         fillForm({
-            title: doc.title || '', author: authors, cover: coverUrl,
+            title: doc.title || '', subtitle: doc.subtitle || '',
+            author: authors, cover: coverUrl,
             summary: stripHtml(summary), genre: subjects || 'Geral',
             pages: doc.number_of_pages_median || '',
             year: doc.first_publish_year || '',
-            publisher: publishers, isbn: isbn, language: 'Portugues'
+            publisher: publishers, publisherMain: publishers, isbn: isbn, language: 'Portugues'
         });
         rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta e guarda.</div>';
         setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
@@ -1400,11 +1411,13 @@ async function selectGoogleBook(item) {
         var lang = (lv === 'pt' || lv === 'pt-br' || lv === 'pt-pt') ? 'Portugues' : v.language || '';
 
         fillForm({
-            title: v.title || '', author: (v.authors || []).join(', '), cover: cover,
+            title: v.title || '', subtitle: v.subtitle || '',
+            author: (v.authors || []).join(', '), cover: cover,
             summary: summary, genre: (v.categories || ['Geral']).join(', '),
             pages: v.pageCount || '',
             year: v.publishedDate ? v.publishedDate.substring(0,4) : '',
-            publisher: v.publisher || '', isbn: isbn, language: lang
+            publisher: v.publisher || '', publisherMain: v.publisher || '',
+            isbn: isbn, language: lang
         });
         rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta e guarda.</div>';
         setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
