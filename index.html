@@ -11,6 +11,7 @@
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <style>
         :root {
@@ -401,9 +402,10 @@
             <div class="api-search-row">
                 <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}">
                 <button class="btn btn-accent" onclick="searchBooks()">Pesquisar</button>
-                <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 Scan</button>
+                <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 ISBN</button>
+                <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar a capa para identificar o livro" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
             </div>
-            <p class="api-hint">Pesquisa por nome, ISBN, ou usa o scanner para ler o codigo de barras do livro</p>
+            <p class="api-hint">Pesquisa por nome, ISBN, scanner de codigo de barras ou foto da capa</p>
             <div class="api-results" id="apiResults"></div>
         </div>
 
@@ -526,6 +528,22 @@
         <button class="nav-item" onclick="setMobileTab(this,'reading')"><span class="nav-icon">📕</span>A Ler</button>
         <button class="nav-item" onclick="setMobileTab(this,'emprestados')"><span class="nav-icon">🤝</span>Emprestados</button>
         <button class="nav-item" onclick="setMobileTab(this,'favorites')"><span class="nav-icon">❤️</span>Favoritos</button>
+    </div>
+</div>
+
+<!-- COVER SCANNER INPUT -->
+<input type="file" id="coverScanFile" accept="image/*" capture="environment" style="display:none" onchange="handleCoverScan(event)">
+
+<!-- COVER SCANNER OVERLAY -->
+<div class="scanner-modal" id="coverScanOverlay" style="background:rgba(0,0,0,0.95);">
+    <button class="scanner-close" onclick="document.getElementById('coverScanOverlay').classList.remove('visible')">&times;</button>
+    <div class="scanner-header">
+        <h3>A analisar a capa...</h3>
+        <div id="coverScanPreview" style="margin:15px auto;max-width:250px;max-height:350px;"></div>
+        <p id="coverScanStatus" style="font-size:0.9em;">A ler texto da capa...</p>
+        <div id="coverScanProgress" style="width:80%;max-width:300px;height:6px;background:rgba(255,255,255,0.2);border-radius:6px;margin:15px auto;overflow:hidden;">
+            <div id="coverScanProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;"></div>
+        </div>
     </div>
 </div>
 
@@ -1733,6 +1751,206 @@ function dismissOnboarding() { document.getElementById('onboarding').style.displ
     }
 })();
 function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
+
+// ============ COVER SCANNER (OCR) ============
+function openCoverScanner() {
+    if (typeof Tesseract === 'undefined') {
+        showToast('OCR nao carregou. Recarrega a pagina.', 'error');
+        return;
+    }
+    // Garantir formulario aberto
+    var form = document.getElementById('addBookForm');
+    if (!form.classList.contains('visible')) {
+        clearForm();
+        form.classList.add('visible');
+    }
+    // Abrir seletor de ficheiro (camera no mobile)
+    document.getElementById('coverScanFile').click();
+}
+
+async function handleCoverScan(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    event.target.value = '';
+
+    var overlay = document.getElementById('coverScanOverlay');
+    var preview = document.getElementById('coverScanPreview');
+    var status = document.getElementById('coverScanStatus');
+    var progressBar = document.getElementById('coverScanProgressBar');
+    overlay.classList.add('visible');
+    status.textContent = 'A preparar imagem...';
+    progressBar.style.width = '5%';
+
+    // Mostrar preview
+    var imgUrl = URL.createObjectURL(file);
+    preview.innerHTML = '<img src="' + imgUrl + '" style="width:100%;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">';
+
+    try {
+        status.textContent = 'A ler texto da capa (pode demorar 10-20s)...';
+
+        var result = await Tesseract.recognize(file, 'por+eng', {
+            logger: function(m) {
+                if (m.status === 'recognizing text') {
+                    var pct = Math.round(m.progress * 90) + 10;
+                    progressBar.style.width = pct + '%';
+                    status.textContent = 'A ler texto... ' + pct + '%';
+                }
+            }
+        });
+
+        var rawText = (result.data.text || '').trim();
+        console.log('OCR raw:', rawText);
+
+        if (!rawText) {
+            status.innerHTML = '<span style="color:var(--danger);">Nao foi possivel ler texto da capa.</span>';
+            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 2500);
+            return;
+        }
+
+        // Extrair possiveis titulos (linhas com pelo menos 3 caracteres, sem muitos simbolos)
+        var lines = rawText.split('\n')
+            .map(function(l) { return l.trim(); })
+            .filter(function(l) { return l.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(l); })
+            .filter(function(l) {
+                // remover linhas com poucos caracteres alfabeticos (lixo OCR)
+                var letters = (l.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+                return letters / l.length > 0.5;
+            });
+
+        if (lines.length === 0) {
+            status.innerHTML = '<span style="color:var(--danger);">Texto lido mas nao reconheci um livro.</span>';
+            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 2500);
+            return;
+        }
+
+        // Tentar pesquisar com as linhas mais promissoras
+        // Ordenar por comprimento (linhas maiores sao geralmente titulos mais descritivos)
+        lines.sort(function(a, b) { return b.length - a.length; });
+
+        // Experimentar as 3 linhas mais longas + combinacoes
+        var candidates = [];
+        if (lines.length >= 1) candidates.push(lines[0]);
+        if (lines.length >= 2) candidates.push(lines[0] + ' ' + lines[1]);
+        if (lines.length >= 2) candidates.push(lines[1]);
+        if (lines.length >= 3) candidates.push(lines[0] + ' ' + lines[2]);
+
+        progressBar.style.width = '95%';
+        status.textContent = 'Texto lido. A pesquisar livro...';
+
+        // Pesquisar cada candidato ate encontrar um resultado
+        var found = null;
+        for (var i = 0; i < candidates.length; i++) {
+            var query = candidates[i].substring(0, 80);
+            try {
+                var resp = await fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(query) + '&limit=5');
+                var data = await resp.json();
+                if (data.docs && data.docs.length > 0) {
+                    found = { source: 'ol', docs: data.docs, query: query };
+                    break;
+                }
+            } catch(e) { console.error('OL err:', e); }
+        }
+
+        // Se OL falhou, tentar Google Books
+        if (!found) {
+            for (var j = 0; j < candidates.length; j++) {
+                var q2 = candidates[j].substring(0, 80);
+                try {
+                    var gbResp = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q2) + '&maxResults=5');
+                    var gbData = await gbResp.json();
+                    if (gbData.items && gbData.items.length > 0) {
+                        found = { source: 'gb', items: gbData.items, query: q2 };
+                        break;
+                    }
+                } catch(e) { console.error('GB err:', e); }
+            }
+        }
+
+        progressBar.style.width = '100%';
+
+        if (!found) {
+            status.innerHTML = '<span style="color:var(--danger);">Livro nao encontrado.</span><br>' +
+                '<span style="font-size:0.8em;">Texto lido: "' + esc(lines[0].substring(0, 60)) + '"</span>';
+            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 3500);
+            return;
+        }
+
+        // Fechar overlay e mostrar resultados na lista de pesquisa
+        overlay.classList.remove('visible');
+        URL.revokeObjectURL(imgUrl);
+
+        document.getElementById('apiQuery').value = found.query;
+        var rd = document.getElementById('apiResults');
+        rd.classList.add('visible');
+        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Identificado! Seleciona o livro correto:</div>';
+
+        // Mostrar os resultados
+        if (found.source === 'ol') {
+            var resultsHtml = document.createElement('div');
+            found.docs.forEach(function(doc) {
+                var coverId = doc.cover_i;
+                var thumb = coverId ? 'https://covers.openlibrary.org/b/id/' + coverId + '-S.jpg' : '';
+                var author = doc.author_name ? doc.author_name.slice(0,2).join(', ') : 'Autor desconhecido';
+                var year = doc.first_publish_year || '';
+
+                var el = document.createElement('div');
+                el.className = 'api-result-item';
+                if (thumb) {
+                    var img = document.createElement('img');
+                    img.src = thumb; img.alt = '';
+                    img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+                    el.appendChild(img);
+                } else {
+                    var nt = document.createElement('div');
+                    nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
+                    el.appendChild(nt);
+                }
+                var info = document.createElement('div');
+                info.className = 'api-result-info';
+                info.innerHTML = '<div class="r-title">' + esc(doc.title || '') + '</div>' +
+                    '<div class="r-author">' + esc(author) + '</div>' +
+                    (year ? '<div class="r-year">' + year + '</div>' : '');
+                el.appendChild(info);
+                el.addEventListener('click', function(d) { return function() { selectOLResult(d); }; }(doc));
+                resultsHtml.appendChild(el);
+            });
+            rd.appendChild(resultsHtml);
+        } else {
+            // Google Books
+            found.items.forEach(function(item) {
+                var v = item.volumeInfo;
+                var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
+                var el = document.createElement('div');
+                el.className = 'api-result-item';
+                if (thumb) {
+                    var img = document.createElement('img');
+                    img.src = thumb; img.alt = '';
+                    img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+                    el.appendChild(img);
+                } else {
+                    var nt = document.createElement('div');
+                    nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
+                    el.appendChild(nt);
+                }
+                var info = document.createElement('div');
+                info.className = 'api-result-info';
+                var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
+                info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
+                    '<div class="r-author">' + esc(author) + '</div>';
+                el.appendChild(info);
+                el.addEventListener('click', function(it) { return function() { selectGoogleBook(it); }; }(item));
+                rd.appendChild(el);
+            });
+        }
+
+        showToast('Livro identificado! Escolhe a edicao correcta.', 'success');
+
+    } catch(e) {
+        console.error('Erro OCR:', e);
+        status.innerHTML = '<span style="color:var(--danger);">Erro: ' + (e.message || e) + '</span>';
+        setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 3000);
+    }
+}
 
 // ============ BARCODE SCANNER ============
 var html5QrScanner = null;
