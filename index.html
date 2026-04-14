@@ -1127,7 +1127,10 @@ function removeCover() {
     document.getElementById('coverRemoveBtn').style.display = 'none';
 }
 
-// ============ GOOGLE BOOKS API ============
+// ============ BOOK SEARCH API ============
+// Usa Google Books SEM langRestrict (pt-BR nao e apanhado por langRestrict=pt)
+// e Open Library como fallback para ISBN portugueses
+
 function fixUrl(url) {
     if (!url) return '';
     return url.replace('http://', 'https://');
@@ -1142,65 +1145,142 @@ async function searchBooks() {
     try {
         var clean = q.replace(/[-\s]/g, '');
         var isISBN = /^\d{10}(\d{3})?$/.test(clean);
-        var url;
+
         if (isISBN) {
-            url = 'https://www.googleapis.com/books/v1/volumes?q=isbn:' + clean + '&maxResults=5';
+            await searchByISBN(clean, rd);
         } else {
-            url = 'https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&langRestrict=pt&maxResults=10&orderBy=relevance';
+            await searchByTitle(q, rd);
         }
-        var resp = await fetch(url);
-        var data = await resp.json();
-        // Fallback sem restricao de lingua
-        if ((!data.items || !data.items.length) && !isISBN) {
-            resp = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=8');
-            data = await resp.json();
-        }
-        if (!data.items || !data.items.length) {
-            rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado.</div>';
-            return;
-        }
-        if (isISBN) {
-            selectGoogleBook(data.items[0]);
-            return;
-        }
-        rd.innerHTML = '';
-        data.items.forEach(function(item) {
-            var v = item.volumeInfo;
-            var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
-            var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
-            var yearLang = v.publishedDate ? v.publishedDate.substring(0, 4) : '';
-            if (v.language) yearLang += (yearLang ? ' · ' : '') + v.language.toUpperCase();
-
-            var el = document.createElement('div');
-            el.className = 'api-result-item';
-
-            if (thumb) {
-                var img = document.createElement('img');
-                img.src = thumb;
-                img.alt = '';
-                img.onerror = function() { this.outerHTML = '<div class="no-thumb">📖</div>'; };
-                el.appendChild(img);
-            } else {
-                var noThumb = document.createElement('div');
-                noThumb.className = 'no-thumb';
-                noThumb.textContent = '📖';
-                el.appendChild(noThumb);
-            }
-
-            var info = document.createElement('div');
-            info.className = 'api-result-info';
-            info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
-                '<div class="r-author">' + esc(author) + '</div>' +
-                (yearLang ? '<div class="r-year">' + esc(yearLang) + '</div>' : '');
-            el.appendChild(info);
-
-            el.addEventListener('click', function() { selectGoogleBook(item); });
-            rd.appendChild(el);
-        });
     } catch(e) {
         console.error('Erro pesquisa livros:', e);
         rd.innerHTML = '<div class="api-loading">Erro na pesquisa. Verifica a ligacao a internet.</div>';
     }
+}
+
+async function searchByISBN(isbn, rd) {
+    // 1) Tentar Open Library primeiro (melhor cobertura para ISBNs portugueses)
+    try {
+        var olResp = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + isbn + '&format=json&jscmd=data');
+        var olData = await olResp.json();
+        var olKey = 'ISBN:' + isbn;
+        if (olData[olKey]) {
+            var book = olData[olKey];
+            var coverUrl = '';
+            if (book.cover) coverUrl = book.cover.large || book.cover.medium || book.cover.small || '';
+            var authors = book.authors ? book.authors.map(function(a) { return a.name; }).join(', ') : '';
+            var subjects = book.subjects ? book.subjects.slice(0, 3).map(function(s) { return s.name; }).join(', ') : 'Geral';
+            var pages = book.number_of_pages || '';
+            var year = book.publish_date || '';
+            var publishers = book.publishers ? book.publishers.map(function(p) { return p.name; }).join(', ') : '';
+
+            // Tentar buscar descricao
+            var summary = '';
+            if (book.key) {
+                try {
+                    var descResp = await fetch('https://openlibrary.org' + book.key + '.json');
+                    var descData = await descResp.json();
+                    if (descData.description) {
+                        summary = typeof descData.description === 'string' ? descData.description : descData.description.value || '';
+                    }
+                } catch(e2) {}
+            }
+
+            // Se resumo nao e PT, buscar no Google Books
+            if (!summary || !looksPortuguese(summary)) {
+                summary = await fetchPTSummary(book.title, authors, summary);
+            }
+
+            fillForm({
+                title: book.title || '',
+                author: authors,
+                cover: fixUrl(coverUrl),
+                summary: stripHtml(summary),
+                genre: subjects,
+                pages: pages,
+                year: year ? year.replace(/.*(\d{4}).*/, '$1') : '',
+                publisher: publishers,
+                isbn: isbn,
+                language: 'Portugues'
+            });
+            rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Livro encontrado por ISBN! Ajusta e guarda.</div>';
+            setTimeout(function() { rd.classList.remove('visible'); }, 2500);
+            return;
+        }
+    } catch(e) {
+        console.error('Open Library ISBN erro:', e);
+    }
+
+    // 2) Fallback: Google Books
+    try {
+        var gbResp = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn + '&maxResults=5');
+        var gbData = await gbResp.json();
+        if (gbData.items && gbData.items.length > 0) {
+            selectGoogleBook(gbData.items[0]);
+            return;
+        }
+    } catch(e) {
+        console.error('Google Books ISBN erro:', e);
+    }
+
+    rd.innerHTML = '<div class="api-loading">ISBN nao encontrado. Tenta pesquisar pelo titulo do livro.</div>';
+}
+
+async function searchByTitle(query, rd) {
+    // Pesquisar no Google Books SEM langRestrict (pt-BR nao e apanhado por langRestrict=pt)
+    var url = 'https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=12&orderBy=relevance';
+    var resp = await fetch(url);
+    var data = await resp.json();
+
+    if (!data.items || !data.items.length) {
+        rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado.</div>';
+        return;
+    }
+
+    // Ordenar: livros em portugues primeiro
+    var items = data.items.slice();
+    items.sort(function(a, b) {
+        var langA = (a.volumeInfo.language || '').toLowerCase();
+        var langB = (b.volumeInfo.language || '').toLowerCase();
+        var ptA = langA.indexOf('pt') === 0 ? 1 : 0;
+        var ptB = langB.indexOf('pt') === 0 ? 1 : 0;
+        return ptB - ptA;
+    });
+
+    rd.innerHTML = '';
+    items.forEach(function(item) {
+        var v = item.volumeInfo;
+        var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
+        var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
+        var lang = (v.language || '').toUpperCase();
+        var yearLang = v.publishedDate ? v.publishedDate.substring(0, 4) : '';
+        if (lang) yearLang += (yearLang ? ' · ' : '') + lang;
+
+        var el = document.createElement('div');
+        el.className = 'api-result-item';
+
+        if (thumb) {
+            var img = document.createElement('img');
+            img.src = thumb;
+            img.alt = '';
+            img.onerror = function() { this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+            el.appendChild(img);
+        } else {
+            var noThumb = document.createElement('div');
+            noThumb.className = 'no-thumb';
+            noThumb.textContent = '\uD83D\uDCD6';
+            el.appendChild(noThumb);
+        }
+
+        var info = document.createElement('div');
+        info.className = 'api-result-info';
+        info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
+            '<div class="r-author">' + esc(author) + '</div>' +
+            (yearLang ? '<div class="r-year">' + esc(yearLang) + '</div>' : '');
+        el.appendChild(info);
+
+        el.addEventListener('click', function() { selectGoogleBook(item); });
+        rd.appendChild(el);
+    });
 }
 
 async function selectGoogleBook(item) {
@@ -1225,7 +1305,8 @@ async function selectGoogleBook(item) {
         }
         var lang = '';
         if (v.language) {
-            lang = v.language === 'pt' || v.language === 'pt-BR' || v.language === 'pt-PT' ? 'Portugues' : v.language;
+            var lv = v.language.toLowerCase();
+            lang = (lv === 'pt' || lv === 'pt-br' || lv === 'pt-pt') ? 'Portugues' : v.language;
         }
 
         fillForm({
@@ -1248,18 +1329,27 @@ async function selectGoogleBook(item) {
     }
 }
 
-function looksPortuguese(t) { return /\b(uma|que|com|para|por|dos|das|seu|sua|sobre|entre|quando|também|até|são|foi|ser|ter|pela|pelo|muito|cada|livro|história|mundo|vida|tempo)\b/i.test(t); }
+function looksPortuguese(t) { return /\b(uma|que|com|para|por|dos|das|seu|sua|sobre|entre|quando|tamb[eé]m|at[eé]|são|foi|ser|ter|pela|pelo|muito|cada|livro|hist[oó]ria|mundo|vida|tempo|pode|ainda|depois|onde|mais|outro|outros|este|essa|essa|aqui|assim)\b/i.test(t); }
 
 async function fetchPTSummary(title, author, fallback) {
     try {
-        const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(title+' '+author)}&langRestrict=pt&maxResults=3`);
-        const d = await r.json();
-        if (d.items) for (const i of d.items) { if (i.volumeInfo.description && looksPortuguese(i.volumeInfo.description)) return i.volumeInfo.description; }
+        // Pesquisar sem langRestrict e filtrar manualmente por lingua PT
+        var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(title + ' ' + author) + '&maxResults=5');
+        var d = await r.json();
+        if (d.items) {
+            for (var i = 0; i < d.items.length; i++) {
+                var desc = d.items[i].volumeInfo.description;
+                var lang = (d.items[i].volumeInfo.language || '').toLowerCase();
+                if (desc && (lang.indexOf('pt') === 0 || looksPortuguese(desc))) {
+                    return desc;
+                }
+            }
+        }
     } catch(e) {}
-    return fallback;
+    return fallback || '';
 }
 
-function stripHtml(h) { if (!h) return ''; const t = document.createElement('div'); t.innerHTML = h; return t.textContent||''; }
+function stripHtml(h) { if (!h) return ''; var t = document.createElement('div'); t.innerHTML = h; return t.textContent || ''; }
 
 function fillForm(d) {
     Object.keys(d).forEach(k => { const el = document.getElementById(k); if (el && d[k]) el.value = d[k]; });
