@@ -1738,7 +1738,7 @@ function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
 var html5QrScanner = null;
 var scannerProcessing = false;
 
-function openScanner() {
+async function openScanner() {
     if (typeof Html5Qrcode === 'undefined') {
         showToast('Scanner nao disponivel. Tenta recarregar a pagina.', 'error');
         return;
@@ -1752,64 +1752,117 @@ function openScanner() {
 
     var modal = document.getElementById('scannerModal');
     var resultDiv = document.getElementById('scannerResult');
-    resultDiv.innerHTML = '';
+    resultDiv.innerHTML = '<p style="color:white;">A iniciar camera...</p>';
     modal.classList.add('visible');
     scannerProcessing = false;
 
-    html5QrScanner = new Html5Qrcode('scannerView');
+    // Limpar scanner anterior
+    if (html5QrScanner) {
+        try { await html5QrScanner.stop(); } catch(e) {}
+        try { html5QrScanner.clear(); } catch(e) {}
+        html5QrScanner = null;
+    }
 
-    var config = {
-        fps: 10,
-        qrbox: { width: 280, height: 120 },
-        formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.CODE_128
-        ]
-    };
+    // iOS Safari precisa de pedir permissao de camera ANTES de criar o scanner
+    try {
+        var stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        });
+        // Parar o stream de teste - a lib vai criar o seu proprio
+        stream.getTracks().forEach(function(track) { track.stop(); });
+    } catch(permErr) {
+        console.error('Permissao camera negada:', permErr);
+        resultDiv.innerHTML = '<p style="color:var(--danger);font-size:1em;">Sem acesso a camera.</p>' +
+            '<p style="color:white;font-size:0.85em;margin-top:10px;">No iPhone vai a:<br><strong>Definicoes > Safari > Camera</strong><br>e permite o acesso para este site.</p>' +
+            '<p style="color:white;font-size:0.8em;margin-top:8px;">Ou usa o campo ISBN para inserir o codigo manualmente.</p>';
+        return;
+    }
 
-    html5QrScanner.start(
-        { facingMode: 'environment' },
-        config,
-        function onScanSuccess(decodedText) {
-            if (scannerProcessing) return;
-            scannerProcessing = true;
-
-            // Normalizar: remover prefixo 978 check digit issues
-            var isbn = decodedText.replace(/[^0-9X]/gi, '');
-            resultDiv.innerHTML = '<div class="found">Codigo encontrado: ' + isbn + '</div><p>A procurar livro...</p>';
-
-            // Vibrar (feedback tactil)
-            if (navigator.vibrate) navigator.vibrate(200);
-
-            // Parar scanner e procurar o livro
-            setTimeout(function() {
-                closeScanner();
-                // Preencher campo ISBN e pesquisar
-                document.getElementById('apiQuery').value = isbn;
-                searchBooks();
-            }, 800);
-        },
-        function onScanFailure() {
-            // Silencioso - scan continuo
+    try {
+        // Encontrar a camera traseira (melhor compatibilidade iOS)
+        var cameras = await Html5Qrcode.getCameras();
+        if (!cameras || cameras.length === 0) {
+            resultDiv.innerHTML = '<p style="color:var(--danger);">Nenhuma camera encontrada.</p>';
+            return;
         }
-    ).catch(function(err) {
-        console.error('Erro ao iniciar scanner:', err);
-        resultDiv.innerHTML = '<p style="color:var(--danger);">Nao foi possivel aceder a camera.<br>Verifica as permissoes do browser.</p>';
-    });
+
+        // Preferir camera traseira
+        var cameraId = cameras[cameras.length - 1].id; // Ultima = geralmente traseira
+        for (var i = 0; i < cameras.length; i++) {
+            var label = (cameras[i].label || '').toLowerCase();
+            if (label.indexOf('back') >= 0 || label.indexOf('rear') >= 0 || label.indexOf('environment') >= 0 || label.indexOf('traseira') >= 0) {
+                cameraId = cameras[i].id;
+                break;
+            }
+        }
+
+        html5QrScanner = new Html5Qrcode('scannerView');
+
+        var scanWidth = Math.min(window.innerWidth - 40, 500);
+        var boxWidth = Math.min(280, scanWidth - 40);
+
+        await html5QrScanner.start(
+            cameraId,
+            {
+                fps: 10,
+                qrbox: { width: boxWidth, height: Math.round(boxWidth * 0.4) },
+                aspectRatio: 1.0,
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODE_128
+                ]
+            },
+            function onScanSuccess(decodedText) {
+                if (scannerProcessing) return;
+                scannerProcessing = true;
+
+                var isbn = decodedText.replace(/[^0-9X]/gi, '');
+                resultDiv.innerHTML = '<div class="found">Codigo encontrado: ' + isbn + '</div><p>A procurar livro...</p>';
+
+                if (navigator.vibrate) navigator.vibrate(200);
+
+                setTimeout(function() {
+                    closeScanner();
+                    document.getElementById('apiQuery').value = isbn;
+                    searchBooks();
+                }, 800);
+            },
+            function onScanFailure() {}
+        );
+
+        resultDiv.innerHTML = '<p style="color:white;font-size:0.85em;">Aponta para o codigo de barras do livro</p>';
+
+    } catch(err) {
+        console.error('Erro scanner:', err);
+        var errMsg = (err && err.message) ? err.message : String(err);
+        resultDiv.innerHTML = '<p style="color:var(--danger);">Erro ao iniciar scanner.</p>' +
+            '<p style="color:white;font-size:0.8em;margin-top:8px;">' + errMsg + '</p>';
+    }
 }
 
-function closeScanner() {
+async function closeScanner() {
     var modal = document.getElementById('scannerModal');
     modal.classList.remove('visible');
     if (html5QrScanner) {
-        html5QrScanner.stop().then(function() {
-            html5QrScanner.clear();
-        }).catch(function() {});
+        try {
+            var state = html5QrScanner.getState();
+            if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+                await html5QrScanner.stop();
+            }
+        } catch(e) {}
+        try { html5QrScanner.clear(); } catch(e) {}
         html5QrScanner = null;
     }
+    // Garantir que nenhum stream de video ficou ativo (iOS)
+    var videos = document.querySelectorAll('#scannerView video');
+    videos.forEach(function(v) {
+        if (v.srcObject) {
+            v.srcObject.getTracks().forEach(function(t) { t.stop(); });
+        }
+    });
 }
 
 // ============ INIT ============
