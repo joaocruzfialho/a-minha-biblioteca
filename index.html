@@ -1128,55 +1128,124 @@ function removeCover() {
 }
 
 // ============ GOOGLE BOOKS API ============
+function fixUrl(url) {
+    if (!url) return '';
+    return url.replace('http://', 'https://');
+}
+
 async function searchBooks() {
-    const q = document.getElementById('apiQuery').value.trim(); if (!q) return;
-    const rd = document.getElementById('apiResults');
+    var q = document.getElementById('apiQuery').value.trim();
+    if (!q) return;
+    var rd = document.getElementById('apiResults');
     rd.classList.add('visible');
     rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A pesquisar...</div>';
     try {
-        const clean = q.replace(/[-\s]/g, '');
-        const isISBN = /^\d{10}(\d{3})?$/.test(clean);
-        let url = isISBN ? `https://www.googleapis.com/books/v1/volumes?q=isbn:${clean}&maxResults=5` : `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&langRestrict=pt&maxResults=10&orderBy=relevance`;
-        let resp = await fetch(url); let data = await resp.json();
+        var clean = q.replace(/[-\s]/g, '');
+        var isISBN = /^\d{10}(\d{3})?$/.test(clean);
+        var url;
+        if (isISBN) {
+            url = 'https://www.googleapis.com/books/v1/volumes?q=isbn:' + clean + '&maxResults=5';
+        } else {
+            url = 'https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&langRestrict=pt&maxResults=10&orderBy=relevance';
+        }
+        var resp = await fetch(url);
+        var data = await resp.json();
+        // Fallback sem restricao de lingua
         if ((!data.items || !data.items.length) && !isISBN) {
-            resp = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8`);
+            resp = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=8');
             data = await resp.json();
         }
-        if (!data.items || !data.items.length) { rd.innerHTML = '<div class="api-loading">Nenhum resultado.</div>'; return; }
-        if (isISBN) { selectGoogleBook(data.items[0]); return; }
+        if (!data.items || !data.items.length) {
+            rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado.</div>';
+            return;
+        }
+        if (isISBN) {
+            selectGoogleBook(data.items[0]);
+            return;
+        }
         rd.innerHTML = '';
-        data.items.forEach(item => {
-            const v = item.volumeInfo;
-            const thumb = v.imageLinks ? (v.imageLinks.smallThumbnail||'') : '';
-            const el = document.createElement('div'); el.className = 'api-result-item';
-            el.innerHTML = `${thumb ? `<img src="${thumb}" onerror="this.outerHTML='<div class=no-thumb>📖</div>'">` : '<div class="no-thumb">📖</div>'}
-                <div class="api-result-info"><div class="r-title">${esc(v.title)}</div><div class="r-author">${esc((v.authors||[]).join(', '))}</div>
-                ${v.publishedDate ? `<div class="r-year">${v.publishedDate.substring(0,4)} · ${(v.language||'').toUpperCase()}</div>` : ''}</div>`;
-            el.addEventListener('click', () => selectGoogleBook(item));
+        data.items.forEach(function(item) {
+            var v = item.volumeInfo;
+            var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
+            var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
+            var yearLang = v.publishedDate ? v.publishedDate.substring(0, 4) : '';
+            if (v.language) yearLang += (yearLang ? ' · ' : '') + v.language.toUpperCase();
+
+            var el = document.createElement('div');
+            el.className = 'api-result-item';
+
+            if (thumb) {
+                var img = document.createElement('img');
+                img.src = thumb;
+                img.alt = '';
+                img.onerror = function() { this.outerHTML = '<div class="no-thumb">📖</div>'; };
+                el.appendChild(img);
+            } else {
+                var noThumb = document.createElement('div');
+                noThumb.className = 'no-thumb';
+                noThumb.textContent = '📖';
+                el.appendChild(noThumb);
+            }
+
+            var info = document.createElement('div');
+            info.className = 'api-result-info';
+            info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
+                '<div class="r-author">' + esc(author) + '</div>' +
+                (yearLang ? '<div class="r-year">' + esc(yearLang) + '</div>' : '');
+            el.appendChild(info);
+
+            el.addEventListener('click', function() { selectGoogleBook(item); });
             rd.appendChild(el);
         });
-    } catch(e) { rd.innerHTML = '<div class="api-loading">Erro na pesquisa.</div>'; }
+    } catch(e) {
+        console.error('Erro pesquisa livros:', e);
+        rd.innerHTML = '<div class="api-loading">Erro na pesquisa. Verifica a ligacao a internet.</div>';
+    }
 }
 
 async function selectGoogleBook(item) {
-    const rd = document.getElementById('apiResults');
-    rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A carregar...</div>';
-    const v = item.volumeInfo;
-    let cover = '';
-    if (v.imageLinks) { cover = (v.imageLinks.large||v.imageLinks.medium||v.imageLinks.thumbnail||'').replace('&edge=curl','').replace('zoom=1','zoom=3'); }
-    let summary = v.description || '';
-    if (summary && !looksPortuguese(summary)) { summary = await fetchPTSummary(v.title, (v.authors||[]).join(' '), summary); }
-    summary = stripHtml(summary);
-    const isbn = v.industryIdentifiers ? (v.industryIdentifiers.find(i=>i.type==='ISBN_13')||v.industryIdentifiers[0]||{}).identifier||'' : '';
+    var rd = document.getElementById('apiResults');
+    rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A carregar detalhes...</div>';
+    try {
+        var v = item.volumeInfo;
+        var cover = '';
+        if (v.imageLinks) {
+            cover = v.imageLinks.large || v.imageLinks.medium || v.imageLinks.thumbnail || v.imageLinks.smallThumbnail || '';
+            cover = fixUrl(cover).replace('&edge=curl', '').replace('zoom=1', 'zoom=3');
+        }
+        var summary = v.description || '';
+        if (!summary || !looksPortuguese(summary)) {
+            summary = await fetchPTSummary(v.title, (v.authors || []).join(' '), summary);
+        }
+        summary = stripHtml(summary);
+        var isbn = '';
+        if (v.industryIdentifiers && v.industryIdentifiers.length > 0) {
+            var isbn13 = v.industryIdentifiers.find(function(id) { return id.type === 'ISBN_13'; });
+            isbn = isbn13 ? isbn13.identifier : v.industryIdentifiers[0].identifier;
+        }
+        var lang = '';
+        if (v.language) {
+            lang = v.language === 'pt' || v.language === 'pt-BR' || v.language === 'pt-PT' ? 'Portugues' : v.language;
+        }
 
-    fillForm({
-        title: v.title||'', author: (v.authors||[]).join(', '), cover, summary,
-        genre: (v.categories||['Geral']).join(', '), pages: v.pageCount||'',
-        year: v.publishedDate ? v.publishedDate.substring(0,4) : '', publisher: v.publisher||'',
-        isbn, language: v.language === 'pt' ? 'Portugues' : (v.language||'')
-    });
-    rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta e guarda.</div>';
-    setTimeout(() => rd.classList.remove('visible'), 2000);
+        fillForm({
+            title: v.title || '',
+            author: (v.authors || []).join(', '),
+            cover: cover,
+            summary: summary,
+            genre: (v.categories || ['Geral']).join(', '),
+            pages: v.pageCount || '',
+            year: v.publishedDate ? v.publishedDate.substring(0, 4) : '',
+            publisher: v.publisher || '',
+            isbn: isbn,
+            language: lang
+        });
+        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta o que quiseres e guarda.</div>';
+        setTimeout(function() { rd.classList.remove('visible'); }, 2500);
+    } catch(e) {
+        console.error('Erro ao carregar detalhes:', e);
+        rd.innerHTML = '<div class="api-loading">Erro ao carregar detalhes.</div>';
+    }
 }
 
 function looksPortuguese(t) { return /\b(uma|que|com|para|por|dos|das|seu|sua|sobre|entre|quando|também|até|são|foi|ser|ter|pela|pelo|muito|cada|livro|história|mundo|vida|tempo)\b/i.test(t); }
