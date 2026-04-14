@@ -272,6 +272,8 @@
         .cover-remove-btn { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; border: none; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
         .cover-options { display: flex; flex-direction: column; gap: 6px; flex: 1; }
         .cover-upload-btn { cursor: pointer; text-align: center; display: block !important; font-size: 0.8em !important; }
+        .btn-fetch-summary { background: var(--accent); color: #333; border: none; padding: 3px 10px; border-radius: 6px; font-size: 0.95em; cursor: pointer; font-weight: 600; margin-left: 6px; transition: 0.2s; font-family: inherit; }
+        .btn-fetch-summary:hover { background: var(--accent-hover); }
 
         /* ===== EMPTY STATE ===== */
         .empty-state { text-align: center; padding: 50px 20px; color: var(--text-light); }
@@ -410,7 +412,10 @@
             <input type="hidden" id="cover" value="">
         </div>
 
-        <div class="form-group"><label>Resumo</label><textarea id="summary" placeholder="Descricao do livro..."></textarea></div>
+        <div class="form-group">
+            <label>Resumo <button type="button" class="btn-fetch-summary" onclick="fetchSummaryForForm()" title="Pesquisar resumo automaticamente pelo titulo/autor">Procurar resumo</button></label>
+            <textarea id="summary" placeholder="Descricao do livro... ou clica em 'Procurar resumo'"></textarea>
+        </div>
 
         <div class="form-row-3">
             <div class="form-group"><label>Categoria</label><input type="text" id="genre" placeholder="Romance, Ficcao..." list="genreList"><datalist id="genreList"></datalist></div>
@@ -1454,6 +1459,68 @@ async function fetchPTSummary(title, author, fallback) {
 }
 
 function stripHtml(h) { if (!h) return ''; var t = document.createElement('div'); t.innerHTML = h; return t.textContent || ''; }
+
+// Procurar resumo para livros inseridos manualmente
+async function fetchSummaryForForm() {
+    var title = document.getElementById('title').value.trim();
+    var author = document.getElementById('author').value.trim();
+    if (!title) { showToast('Preenche primeiro o titulo do livro.', 'warning'); return; }
+
+    var summaryEl = document.getElementById('summary');
+    var originalText = summaryEl.value;
+    summaryEl.value = 'A procurar resumo...';
+    summaryEl.disabled = true;
+
+    try {
+        var summary = '';
+
+        // 1) Open Library: pesquisar por titulo + autor
+        try {
+            var query = title + (author ? ' ' + author : '');
+            var olResp = await fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(query) + '&limit=5');
+            var olData = await olResp.json();
+            if (olData.docs && olData.docs.length > 0) {
+                // Tentar buscar descricao de cada resultado
+                for (var i = 0; i < Math.min(olData.docs.length, 3); i++) {
+                    var doc = olData.docs[i];
+                    if (doc.key) {
+                        try {
+                            var wResp = await fetch('https://openlibrary.org' + doc.key + '.json');
+                            var wData = await wResp.json();
+                            var desc = wData.description;
+                            if (desc) {
+                                var text = typeof desc === 'string' ? desc : desc.value || '';
+                                if (text && text.length > 30) {
+                                    summary = text;
+                                    break;
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch(e) { console.error('OL summary search:', e); }
+
+        // 2) Se nao encontrou, tentar Google Books
+        if (!summary) {
+            summary = await fetchPTSummary(title, author, '');
+        }
+
+        summaryEl.disabled = false;
+        if (summary) {
+            summaryEl.value = stripHtml(summary).substring(0, 800);
+            showToast('Resumo encontrado!', 'success');
+        } else {
+            summaryEl.value = originalText;
+            showToast('Nao foi possivel encontrar um resumo para este livro.', 'warning');
+        }
+    } catch(e) {
+        console.error('Erro ao procurar resumo:', e);
+        summaryEl.disabled = false;
+        summaryEl.value = originalText;
+        showToast('Erro ao procurar resumo.', 'error');
+    }
+}
 
 function fillForm(d) {
     Object.keys(d).forEach(k => { const el = document.getElementById(k); if (el && d[k]) el.value = d[k]; });
