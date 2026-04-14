@@ -9,6 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <style>
         :root {
@@ -547,6 +548,53 @@
 </div>
 
 <script>
+// ============ SUPABASE ============
+const SUPABASE_URL = 'https://ztixwjxpxjejvcffupcu.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0aXh3anhweGplanZjZmZ1cGN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzUxNDAsImV4cCI6MjA5MTc1MTE0MH0.2XZVL-cjJG2Cq08pxOXZHVN3JYUfYeHo_BKDjVPfEgU';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Mapeamento JS camelCase <-> DB snake_case
+const FIELD_MAP = {
+    readingStatus: 'reading_status', pagesRead: 'pages_read',
+    publisherMain: 'publisher_main', acquiredDate: 'acquired_date',
+    readStart: 'read_start', readEnd: 'read_end',
+    lentTo: 'lent_to', loanDate: 'loan_date', loanNotes: 'loan_notes',
+    loanHistory: 'loan_history', addedAt: 'added_at'
+};
+const FIELD_MAP_REV = {};
+Object.keys(FIELD_MAP).forEach(function(k) { FIELD_MAP_REV[FIELD_MAP[k]] = k; });
+
+function toDbRow(book) {
+    var row = {};
+    Object.keys(book).forEach(function(k) {
+        if (k === '_i') return;
+        var dbKey = FIELD_MAP[k] || k;
+        row[dbKey] = book[k];
+    });
+    // Garantir tipos corretos
+    row.rating = parseInt(row.rating) || 0;
+    row.pages = parseInt(row.pages) || 0;
+    row.pages_read = parseInt(row.pages_read) || 0;
+    row.year = parseInt(row.year) || 0;
+    row.price = parseFloat(row.price) || 0;
+    row.favorite = !!row.favorite;
+    row.added_at = row.added_at || Date.now();
+    if (typeof row.loan_history === 'string') {
+        try { row.loan_history = JSON.parse(row.loan_history); } catch(e) { row.loan_history = []; }
+    }
+    row.loan_history = row.loan_history || [];
+    return row;
+}
+
+function fromDbRow(row) {
+    var book = {};
+    Object.keys(row).forEach(function(k) {
+        var jsKey = FIELD_MAP_REV[k] || k;
+        book[jsKey] = row[k];
+    });
+    return book;
+}
+
 // ============ STATE ============
 let library = JSON.parse(localStorage.getItem('myLibrary')) || [];
 let currentTab = 'todos';
@@ -555,9 +603,106 @@ let readingGoal = parseInt(localStorage.getItem('readingGoal')) || 12;
 let loanPeople = JSON.parse(localStorage.getItem('loanPeople')) || [];
 let confirmResolver = null;
 let lastDeleted = null;
+let dbReady = false;
 const CATEGORY_COLORS = ['#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#1abc9c','#f39c12','#e84393','#00b894','#6c5ce7','#fd79a8','#00cec9'];
 
-function save() { localStorage.setItem('myLibrary', JSON.stringify(library)); }
+function saveLocal() { localStorage.setItem('myLibrary', JSON.stringify(library)); }
+
+function save() {
+    saveLocal();
+    if (dbReady) syncToDb();
+}
+
+// ============ SUPABASE SYNC ============
+var syncTimeout = null;
+function syncToDb() {
+    // Debounce: esperar 500ms antes de sincronizar
+    clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(async function() {
+        try {
+            // Carregar todos os IDs da DB
+            var { data: existing } = await supabase.from('books').select('id');
+            var existingIds = new Set((existing || []).map(function(r) { return r.id; }));
+
+            // Livros locais com ID = update, sem ID = insert
+            var toInsert = [];
+            var toUpdate = [];
+
+            library.forEach(function(book) {
+                var row = toDbRow(book);
+                delete row.created_at;
+                delete row.updated_at;
+                row.updated_at = new Date().toISOString();
+                if (book.id && existingIds.has(book.id)) {
+                    toUpdate.push(row);
+                    existingIds.delete(book.id);
+                } else if (book.id) {
+                    toInsert.push(row);
+                } else {
+                    delete row.id;
+                    toInsert.push(row);
+                }
+            });
+
+            // IDs que sobraram na DB mas nao estao local = apagar
+            var toDelete = Array.from(existingIds);
+
+            if (toInsert.length > 0) {
+                var { data: inserted, error: insErr } = await supabase.from('books').insert(toInsert).select('id');
+                if (insErr) console.error('Insert error:', insErr);
+                // Atribuir IDs aos livros locais que nao tinham
+                if (inserted) {
+                    var insertIdx = 0;
+                    library.forEach(function(book) {
+                        if (!book.id && insertIdx < inserted.length) {
+                            book.id = inserted[insertIdx].id;
+                            insertIdx++;
+                        }
+                    });
+                    saveLocal();
+                }
+            }
+
+            for (var i = 0; i < toUpdate.length; i++) {
+                var r = toUpdate[i];
+                var id = r.id;
+                delete r.id;
+                delete r.created_at;
+                await supabase.from('books').update(r).eq('id', id);
+            }
+
+            if (toDelete.length > 0) {
+                await supabase.from('books').delete().in('id', toDelete);
+            }
+        } catch(e) {
+            console.error('Sync error:', e);
+        }
+    }, 500);
+}
+
+async function loadFromDb() {
+    try {
+        var { data, error } = await supabase.from('books').select('*').order('added_at', { ascending: false });
+        if (error) throw error;
+        if (data && data.length > 0) {
+            library = data.map(fromDbRow);
+            saveLocal();
+            renderBooks();
+            console.log('Carregados ' + library.length + ' livros do Supabase');
+        } else if (library.length > 0) {
+            // DB vazia mas temos dados locais: enviar para DB
+            syncToDb();
+        }
+        dbReady = true;
+    } catch(e) {
+        console.error('Erro ao carregar do Supabase:', e);
+        dbReady = false;
+        // Continuar com dados locais
+    }
+}
+
+// Carregar da DB ao iniciar
+loadFromDb();
 
 // ============ TOAST ============
 function showToast(msg, type = '', action = null, actionLabel = '') {
