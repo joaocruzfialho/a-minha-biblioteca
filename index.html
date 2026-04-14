@@ -578,7 +578,12 @@
 // ============ SUPABASE ============
 const SUPABASE_URL = 'https://ztixwjxpxjejvcffupcu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0aXh3anhweGplanZjZmZ1cGN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNzUxNDAsImV4cCI6MjA5MTc1MTE0MH0.2XZVL-cjJG2Cq08pxOXZHVN3JYUfYeHo_BKDjVPfEgU';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+var supabaseClient = null;
+try {
+    if (window.supabase && window.supabase.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+} catch(e) { console.warn('Supabase nao disponivel, a usar localStorage:', e); }
 
 // Mapeamento JS camelCase <-> DB snake_case
 const FIELD_MAP = {
@@ -643,12 +648,13 @@ function save() {
 // ============ SUPABASE SYNC ============
 var syncTimeout = null;
 function syncToDb() {
+    if (!supabaseClient) return;
     // Debounce: esperar 500ms antes de sincronizar
     clearTimeout(syncTimeout);
     syncTimeout = setTimeout(async function() {
         try {
             // Carregar todos os IDs da DB
-            var { data: existing } = await supabase.from('books').select('id');
+            var { data: existing } = await supabaseClient.from('books').select('id');
             var existingIds = new Set((existing || []).map(function(r) { return r.id; }));
 
             // Livros locais com ID = update, sem ID = insert
@@ -675,7 +681,7 @@ function syncToDb() {
             var toDelete = Array.from(existingIds);
 
             if (toInsert.length > 0) {
-                var { data: inserted, error: insErr } = await supabase.from('books').insert(toInsert).select('id');
+                var { data: inserted, error: insErr } = await supabaseClient.from('books').insert(toInsert).select('id');
                 if (insErr) console.error('Insert error:', insErr);
                 // Atribuir IDs aos livros locais que nao tinham
                 if (inserted) {
@@ -695,11 +701,11 @@ function syncToDb() {
                 var id = r.id;
                 delete r.id;
                 delete r.created_at;
-                await supabase.from('books').update(r).eq('id', id);
+                await supabaseClient.from('books').update(r).eq('id', id);
             }
 
             if (toDelete.length > 0) {
-                await supabase.from('books').delete().in('id', toDelete);
+                await supabaseClient.from('books').delete().in('id', toDelete);
             }
         } catch(e) {
             console.error('Sync error:', e);
@@ -708,8 +714,9 @@ function syncToDb() {
 }
 
 async function loadFromDb() {
+    if (!supabaseClient) { dbReady = false; return; }
     try {
-        var { data, error } = await supabase.from('books').select('*').order('added_at', { ascending: false });
+        var { data, error } = await supabaseClient.from('books').select('*').order('added_at', { ascending: false });
         if (error) throw error;
         if (data && data.length > 0) {
             library = data.map(fromDbRow);
@@ -1732,6 +1739,10 @@ var html5QrScanner = null;
 var scannerProcessing = false;
 
 function openScanner() {
+    if (typeof Html5Qrcode === 'undefined') {
+        showToast('Scanner nao disponivel. Tenta recarregar a pagina.', 'error');
+        return;
+    }
     // Garantir que o formulario esta visivel
     var form = document.getElementById('addBookForm');
     if (!form.classList.contains('visible')) {
