@@ -12,36 +12,69 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
     <style>
         :root {
             --primary: #1a1a2e;
             --secondary: #16213e;
-            --accent: #e2b714;
-            --accent-hover: #d4a910;
-            --danger: #e74c3c;
-            --success: #27ae60;
-            --warning: #f39c12;
-            --info: #3498db;
-            --bg: #f0f2f5;
+            --accent: #c9a227;
+            --accent-hover: #b89020;
+            --accent-soft: #f5e9c7;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --info: #2563eb;
+            --bg: #efebe3;
             --card-bg: #F5F2ED;
-            --text: #2c3e50;
-            --text-light: #7f8c8d;
-            --border: #e8e8e8;
-            --input-bg: #fafafa;
-            --shadow: 0 4px 20px rgba(0,0,0,0.08);
-            --radius: 14px;
+            --card-elevated: #FBF9F5;
+            --text: #1f2937;
+            --text-light: #6b7280;
+            --text-muted: #9ca3af;
+            --border: #e5e0d5;
+            --border-strong: #d4cdbe;
+            --input-bg: #faf7f1;
+            --shadow-xs: 0 1px 2px rgba(20,15,5,0.04);
+            --shadow-sm: 0 2px 6px rgba(20,15,5,0.06), 0 1px 2px rgba(20,15,5,0.04);
+            --shadow: 0 4px 12px rgba(20,15,5,0.08), 0 2px 4px rgba(20,15,5,0.04);
+            --shadow-md: 0 8px 24px rgba(20,15,5,0.1), 0 4px 8px rgba(20,15,5,0.05);
+            --shadow-lg: 0 20px 40px rgba(20,15,5,0.12), 0 8px 16px rgba(20,15,5,0.06);
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-serif: 'Playfair Display', Georgia, serif;
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+            --space-8: 32px;
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         [data-theme="dark"] {
-            --primary: #e2b714;
-            --secondary: #d4a910;
-            --bg: #0f0f1a;
-            --card-bg: #1a1a2e;
-            --text: #e0e0e0;
-            --text-light: #8899aa;
+            --primary: #c9a227;
+            --secondary: #b89020;
+            --accent: #c9a227;
+            --accent-soft: #3a3220;
+            --bg: #0a0a14;
+            --card-bg: #141424;
+            --card-elevated: #1c1c30;
+            --text: #f3f4f6;
+            --text-light: #9ca3af;
+            --text-muted: #6b7280;
             --border: #2a2a3e;
-            --input-bg: #16213e;
-            --shadow: 0 4px 20px rgba(0,0,0,0.3);
+            --border-strong: #3a3a52;
+            --input-bg: #1c1c30;
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-sm: 0 2px 6px rgba(0,0,0,0.4);
+            --shadow: 0 4px 12px rgba(0,0,0,0.4);
+            --shadow-md: 0 8px 24px rgba(0,0,0,0.5);
+            --shadow-lg: 0 20px 40px rgba(0,0,0,0.6);
         }
         [data-theme="dark"] .header { background: linear-gradient(135deg, #0f0f1a, #1a1a2e); }
         [data-theme="dark"] .api-search { background: linear-gradient(135deg, #16213e, #1a1a3e); border-color: #2a2a4e; }
@@ -55,17 +88,82 @@
         [data-theme="dark"] .stat-card { background: #16213e; }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 70px; transition: background 0.3s, color 0.3s; }
+        *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+        button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 2px; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding-bottom: 70px;
+            transition: background 0.3s, color 0.3s;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+            letter-spacing: -0.011em;
+        }
+        h1, h2, h3 { letter-spacing: -0.02em; font-weight: 700; }
+        h1 { font-family: var(--font-serif); font-weight: 700; letter-spacing: -0.015em; }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid var(--bg); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        [data-theme="dark"] ::-webkit-scrollbar-thumb { background: var(--border-strong); border-color: var(--bg); }
+
+        /* Selection */
+        ::selection { background: var(--accent); color: #fff; }
 
         /* ===== HEADER ===== */
-        .header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 15px 20px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 20px rgba(0,0,0,0.2); }
-        .header-top { display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: auto; }
-        .header h1 { font-size: 1.3em; font-weight: 700; }
-        .header-actions { display: flex; gap: 8px; align-items: center; }
-        .header-btn { background: rgba(255,255,255,0.15); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1.1em; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
-        .header-btn:hover { background: rgba(255,255,255,0.25); }
-        .stats-bar { display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 0.8em; opacity: 0.85; flex-wrap: wrap; }
-        .stats-bar span { display: flex; align-items: center; gap: 3px; }
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #2d2148 50%, #16213e 100%);
+            color: white; padding: 14px 20px; position: sticky; top: 0; z-index: 100;
+            box-shadow: var(--shadow-md);
+            border-bottom: 1px solid rgba(201, 162, 39, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .header::after {
+            content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(201,162,39,0.4), transparent);
+        }
+        .header-top { display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: auto; gap: 12px; }
+        .header-title { display: flex; align-items: center; gap: 10px; }
+        .header h1 { font-size: 1.4em; font-weight: 700; color: #f5f2ed; margin: 0; }
+        .header-title .logo-icon { font-size: 1.5em; line-height: 1; filter: drop-shadow(0 0 12px rgba(201,162,39,0.4)); }
+        .header-actions { display: flex; gap: 6px; align-items: center; }
+        .header-btn {
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.08);
+            color: #f5f2ed; width: 38px; height: 38px; border-radius: 10px;
+            cursor: pointer; font-size: 1.1em; display: flex; align-items: center; justify-content: center;
+            transition: var(--transition);
+            backdrop-filter: blur(8px);
+        }
+        .header-btn:hover { background: rgba(201,162,39,0.2); border-color: rgba(201,162,39,0.4); transform: translateY(-1px); }
+        .header-btn:active { transform: translateY(0) scale(0.95); }
+        .stats-bar {
+            display: flex; justify-content: center; gap: 18px; margin-top: 8px;
+            font-size: 0.78em; color: rgba(245,242,237,0.75); flex-wrap: wrap;
+            letter-spacing: 0.02em;
+        }
+        .stats-bar span { display: flex; align-items: center; gap: 4px; }
+        .stats-bar span strong { color: #f5f2ed; font-weight: 600; }
+
+        /* Sync/online indicator */
+        .status-indicator {
+            display: flex; align-items: center; gap: 5px;
+            font-size: 0.72em; padding: 2px 8px;
+            border-radius: 20px; background: rgba(22,163,74,0.2);
+            color: #86efac; border: 1px solid rgba(22,163,74,0.3);
+        }
+        .status-indicator.offline { background: rgba(220,38,38,0.2); color: #fca5a5; border-color: rgba(220,38,38,0.3); }
+        .status-indicator.syncing { background: rgba(37,99,235,0.2); color: #93c5fd; border-color: rgba(37,99,235,0.3); }
+        .status-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .status-indicator.syncing .dot { animation: spin 1s linear infinite; }
 
         .container { max-width: 1200px; margin: auto; padding: 15px; }
 
@@ -88,13 +186,18 @@
         /* ===== TABS ===== */
         .tabs { display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
         .tabs::-webkit-scrollbar { display: none; }
-        .tab { padding: 8px 16px; border-radius: 25px; border: 2px solid #ddd; background: #F5F2ED; cursor: pointer; font-weight: 600; font-size: 0.85em; white-space: nowrap; transition: 0.3s; color: var(--text); user-select: none; }
-        .tab:hover { border-color: var(--accent); }
-        .tab.active { background: #1a1a2e; color: white; border-color: #1a1a2e; }
+        .tab {
+            padding: 8px 16px; border-radius: 24px; border: 1.5px solid var(--border);
+            background: var(--card-bg); cursor: pointer; font-weight: 600;
+            font-size: 0.83em; white-space: nowrap; transition: var(--transition);
+            color: var(--text); user-select: none; display: inline-flex; align-items: center; gap: 6px;
+            box-shadow: var(--shadow-xs);
+        }
+        .tab:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .tab.active { background: #1a1a2e; color: white; border-color: #1a1a2e; box-shadow: var(--shadow-sm); }
         [data-theme="dark"] .tab.active { background: var(--accent); color: #1a1a2e; }
-        .tab-count { background: rgba(255,255,255,0.3); padding: 1px 7px; border-radius: 10px; font-size: 0.8em; margin-left: 4px; }
-        .tab.active .tab-count { background: rgba(255,255,255,0.3); }
-        .tab:not(.active) .tab-count { background: rgba(0,0,0,0.08); }
+        .tab-count { background: rgba(255,255,255,0.25); padding: 1px 8px; border-radius: 10px; font-size: 0.82em; font-weight: 700; }
+        .tab:not(.active) .tab-count { background: var(--border); color: var(--text-light); }
 
         /* ===== FORM ===== */
         .add-book { background: var(--card-bg); padding: 20px; border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 20px; display: none; }
@@ -116,18 +219,33 @@
         .form-section-content.visible { display: block; }
 
         /* ===== BUTTONS ===== */
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 10px 20px; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9em; transition: all 0.3s; font-family: inherit; }
-        .btn-primary { background: #1a1a2e; color: white; width: 100%; }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 10px 18px; border: 1px solid transparent; border-radius: var(--radius-sm);
+            cursor: pointer; font-weight: 600; font-size: 0.88em;
+            transition: var(--transition); font-family: inherit;
+            letter-spacing: -0.005em;
+            position: relative; overflow: hidden;
+        }
+        .btn::before {
+            content: ''; position: absolute; inset: 0;
+            background: radial-gradient(circle at var(--x,50%) var(--y,50%), rgba(255,255,255,0.2), transparent 50%);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .btn:hover::before { opacity: 1; }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #1a1a2e; color: white; width: 100%; box-shadow: var(--shadow-sm); }
         [data-theme="dark"] .btn-primary { background: var(--accent); color: #1a1a2e; }
-        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-        .btn-accent { background: var(--accent); color: #333; }
-        .btn-accent:hover { background: var(--accent-hover); }
-        .btn-success { background: var(--success); color: white; }
-        .btn-danger { background: var(--danger); color: white; }
-        .btn-outline { background: transparent; border: 2px solid #ddd; color: var(--text); }
-        .btn-outline:hover { border-color: var(--accent); }
-        .btn-sm { padding: 7px 12px; font-size: 0.8em; }
-        .btn-xs { padding: 4px 8px; font-size: 0.75em; border-radius: 6px; }
+        .btn-primary:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .btn-accent { background: var(--accent); color: #1a1a2e; box-shadow: var(--shadow-sm); }
+        .btn-accent:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+        .btn-success { background: var(--success); color: white; box-shadow: var(--shadow-sm); }
+        .btn-danger { background: var(--danger); color: white; box-shadow: var(--shadow-sm); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--border-strong); color: var(--text); }
+        .btn-outline:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+        .btn-sm { padding: 7px 14px; font-size: 0.82em; }
+        .btn-xs { padding: 5px 10px; font-size: 0.75em; border-radius: 6px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
 
         /* ===== FAB ===== */
         .fab { position: fixed; bottom: 80px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #333; border: none; font-size: 26px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.25); z-index: 99; transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
@@ -152,8 +270,17 @@
         .grid.list-view { grid-template-columns: 1fr; }
 
         /* ===== CARD ===== */
-        .card { background: var(--card-bg); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); position: relative; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; animation: fadeIn 0.4s ease; }
-        .card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.12); }
+        .card {
+            background: var(--card-elevated);
+            border-radius: var(--radius-lg); overflow: hidden;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+            position: relative; display: flex; flex-direction: column;
+            transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1);
+            animation: fadeIn 0.4s ease;
+        }
+        .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+        .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .list-view .card { flex-direction: row; }
         .list-view .card .card-cover { width: 110px; min-width: 110px; height: 160px; }
@@ -176,15 +303,17 @@
         .reading-progress-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: rgba(0,0,0,0.2); }
         .reading-progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 
-        .card-content { padding: 14px; flex-grow: 1; display: flex; flex-direction: column; }
-        .card-genre { font-size: 0.7em; text-transform: uppercase; font-weight: 700; letter-spacing: 0.8px; }
-        .card-title { font-size: 1em; font-weight: 700; margin: 3px 0; line-height: 1.3; }
-        .card-author { font-size: 0.85em; color: var(--text-light); margin-bottom: 4px; }
-        .card-meta { font-size: 0.75em; color: var(--text-light); display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
-        .card-summary { font-size: 0.78em; color: #999; line-height: 1.4; flex-grow: 1; }
-        .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-        .tag { padding: 2px 8px; border-radius: 10px; font-size: 0.7em; font-weight: 600; background: var(--input-bg); color: var(--text-light); }
-        .rating-stars { color: var(--accent); font-size: 0.85em; margin: 2px 0; cursor: pointer; }
+        .card-content { padding: 14px 16px 16px; flex-grow: 1; display: flex; flex-direction: column; }
+        .card-genre { font-size: 0.68em; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; opacity: 0.9; }
+        .card-title { font-family: var(--font-serif); font-size: 1.08em; font-weight: 600; margin: 4px 0 2px; line-height: 1.25; color: var(--text); }
+        .card-author { font-size: 0.82em; color: var(--text-light); margin-bottom: 6px; font-weight: 500; }
+        .card-meta { font-size: 0.73em; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; font-weight: 500; }
+        .card-meta span { display: inline-flex; align-items: center; gap: 3px; }
+        .card-summary { font-size: 0.78em; color: var(--text-light); line-height: 1.5; flex-grow: 1; margin-top: 2px; }
+        .card-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+        .tag { padding: 3px 10px; border-radius: 12px; font-size: 0.7em; font-weight: 600; background: var(--accent-soft); color: #8b6f1a; border: 1px solid rgba(201,162,39,0.2); }
+        [data-theme="dark"] .tag { background: var(--accent-soft); color: var(--accent); border-color: rgba(201,162,39,0.3); }
+        .rating-stars { color: var(--accent); font-size: 0.95em; margin: 3px 0; cursor: pointer; letter-spacing: 1px; }
         .loan-info { background: #fff5f5; border: 1px solid #fed7d7; padding: 8px 10px; border-radius: 8px; margin-top: 8px; font-size: 0.78em; line-height: 1.5; }
         [data-theme="dark"] .loan-info { background: #2a1a1a; border-color: #4a2a2a; }
         .overdue { color: var(--danger); font-weight: 700; }
@@ -217,12 +346,26 @@
 
         /* ===== TOAST ===== */
         .toast-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
-        .toast { background: #333; color: white; padding: 12px 20px; border-radius: 10px; font-size: 0.9em; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px; pointer-events: all; animation: toastIn 0.3s ease; min-width: 280px; }
-        .toast.success { background: var(--success); }
-        .toast.error { background: var(--danger); }
-        .toast.warning { background: var(--warning); }
-        .toast .toast-action { background: rgba(255,255,255,0.25); border: none; color: white; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85em; }
-        @keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .toast {
+            background: var(--card-elevated); color: var(--text);
+            padding: 12px 16px; border-radius: var(--radius);
+            font-size: 0.88em; box-shadow: var(--shadow-lg);
+            display: flex; align-items: center; gap: 10px; pointer-events: all;
+            animation: toastIn 0.3s ease; min-width: 280px; max-width: 90vw;
+            border-left: 3px solid var(--info);
+            border: 1px solid var(--border); border-left: 3px solid var(--info);
+        }
+        .toast::before { font-size: 1.2em; }
+        .toast.success { border-left-color: var(--success); }
+        .toast.success::before { content: '✓'; color: var(--success); font-weight: bold; }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.error::before { content: '⚠'; color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+        .toast.warning::before { content: '!'; color: var(--warning); font-weight: bold; }
+        .toast:not(.success):not(.error):not(.warning)::before { content: 'ℹ'; color: var(--info); }
+        .toast .toast-action { background: var(--accent); color: #1a1a2e; border: none; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.82em; margin-left: auto; }
+        .toast .toast-action:hover { background: var(--accent-hover); }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
         /* ===== CONFIRM DIALOG ===== */
         .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
@@ -292,6 +435,127 @@
         .btn-scanner { background: linear-gradient(135deg, var(--accent), #e67e22); color: #333; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 0.9em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.3s; font-family: inherit; }
         .btn-scanner:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
 
+        /* ===== COMMAND PALETTE ===== */
+        .cmd-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); z-index: 400; padding: 80px 20px 20px; justify-content: center; align-items: flex-start; }
+        .cmd-overlay.visible { display: flex; }
+        .cmd-box { background: var(--card-elevated); border-radius: var(--radius-lg); max-width: 600px; width: 100%; max-height: 80vh; overflow: hidden; box-shadow: var(--shadow-lg); border: 1px solid var(--border); animation: cmdIn 0.2s ease; display: flex; flex-direction: column; }
+        @keyframes cmdIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .cmd-search { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); gap: 10px; }
+        .cmd-search input { flex: 1; margin: 0; border: none; background: transparent; padding: 0; font-size: 1em; }
+        .cmd-search input:focus { background: transparent; }
+        .cmd-kbd { font-size: 0.72em; padding: 2px 6px; background: var(--border); border-radius: 4px; font-family: monospace; color: var(--text-light); }
+        .cmd-results { overflow-y: auto; flex: 1; padding: 6px; }
+        .cmd-section { padding: 8px 12px 4px; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; }
+        .cmd-item { display: flex; align-items: center; padding: 10px 14px; border-radius: 8px; cursor: pointer; gap: 10px; transition: background 0.15s; }
+        .cmd-item:hover, .cmd-item.selected { background: var(--accent-soft); }
+        .cmd-item-icon { font-size: 1.1em; width: 24px; text-align: center; }
+        .cmd-item-text { flex: 1; }
+        .cmd-item-title { font-weight: 600; font-size: 0.92em; }
+        .cmd-item-desc { font-size: 0.78em; color: var(--text-light); margin-top: 1px; }
+
+        /* ===== SKELETON LOADING ===== */
+        .skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
+        .skeleton-card { background: var(--card-elevated); border-radius: var(--radius-lg); border: 1px solid var(--border); overflow: hidden; padding-bottom: 16px; }
+        .skeleton-line { background: linear-gradient(90deg, var(--border) 0%, var(--border-strong) 50%, var(--border) 100%); background-size: 200% 100%; animation: skeletonShine 1.5s infinite; border-radius: 4px; }
+        @keyframes skeletonShine { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .skeleton-cover { width: 100%; height: 280px; }
+        .skeleton-text { height: 12px; margin: 8px 14px; }
+
+        /* ===== FEATURED SECTIONS ===== */
+        .featured-row {
+            background: var(--card-bg); border-radius: var(--radius-lg);
+            padding: 18px; margin-bottom: 20px; box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+        }
+        .featured-title {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .featured-title h3 { font-family: var(--font-serif); font-size: 1.05em; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .featured-title .badge { font-size: 0.7em; background: var(--accent-soft); color: #8b6f1a; padding: 3px 10px; border-radius: 10px; font-weight: 700; }
+        [data-theme="dark"] .featured-title .badge { background: var(--accent-soft); color: var(--accent); }
+        .mini-books { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+        .mini-books::-webkit-scrollbar { height: 4px; }
+        .mini-book { flex-shrink: 0; width: 100px; cursor: pointer; scroll-snap-align: start; transition: transform 0.2s; }
+        .mini-book:hover { transform: translateY(-3px); }
+        .mini-book-cover {
+            width: 100px; height: 150px; border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; box-shadow: var(--shadow-sm);
+        }
+        .mini-book-cover img { width: 100%; height: 100%; object-fit: cover; }
+        .mini-book-cover .no-cover-mini { color: white; font-size: 1.8em; opacity: 0.6; }
+        .mini-book-title { font-size: 0.78em; font-weight: 600; margin-top: 6px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .mini-book-author { font-size: 0.7em; color: var(--text-light); margin-top: 2px; }
+
+        /* ===== READING GOAL RING ===== */
+        .reading-goal { background: var(--card-bg); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1px solid var(--border); display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+        .goal-ring { width: 80px; height: 80px; flex-shrink: 0; position: relative; }
+        .goal-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+        .goal-ring circle { fill: none; stroke-width: 8; }
+        .goal-ring .ring-bg { stroke: var(--border); }
+        .goal-ring .ring-fill { stroke: url(#gradRing); stroke-linecap: round; transition: stroke-dasharray 0.6s cubic-bezier(0.4,0,0.2,1); }
+        .goal-ring .ring-value { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 700; }
+        .goal-ring .ring-value span:first-child { font-size: 1.3em; color: var(--text); }
+        .goal-ring .ring-value span:last-child { font-size: 0.6em; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; }
+        .goal-info { flex: 1; min-width: 150px; }
+        .goal-info h3 { font-size: 1em; font-weight: 700; margin-bottom: 4px; }
+        .goal-info p { font-size: 0.85em; color: var(--text-light); }
+
+        /* ===== GROUP BY ===== */
+        .group-header {
+            font-family: var(--font-serif); font-size: 1.3em; font-weight: 700;
+            margin: 24px 0 12px; padding-bottom: 8px;
+            border-bottom: 2px solid var(--border);
+            color: var(--text);
+            display: flex; align-items: baseline; gap: 10px;
+        }
+        .group-header span { font-size: 0.7em; color: var(--text-muted); font-family: var(--font-sans); font-weight: 500; letter-spacing: 0.5px; }
+
+        /* ===== BULK MODE ===== */
+        .bulk-bar {
+            display: none; position: fixed; bottom: 80px; left: 50%;
+            transform: translateX(-50%); background: var(--primary); color: white;
+            padding: 10px 16px; border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg); z-index: 95;
+            align-items: center; gap: 10px;
+            animation: cmdIn 0.25s ease;
+        }
+        [data-theme="dark"] .bulk-bar { background: var(--accent); color: #1a1a2e; }
+        .bulk-bar.visible { display: flex; }
+        .bulk-bar .count { font-weight: 700; padding: 2px 10px; background: rgba(255,255,255,0.2); border-radius: 12px; font-size: 0.85em; }
+        .bulk-bar button { background: rgba(255,255,255,0.15); color: inherit; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.82em; font-weight: 600; font-family: inherit; transition: background 0.2s; }
+        .bulk-bar button:hover { background: rgba(255,255,255,0.25); }
+        .card-checkbox { position: absolute; top: 10px; left: 10px; z-index: 3; width: 24px; height: 24px; border-radius: 6px; background: rgba(255,255,255,0.9); border: 2px solid var(--border-strong); cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 0.9em; }
+        .bulk-mode .card .card-checkbox { display: flex; }
+        .bulk-mode .card .card-badges { left: 40px; }
+        .card-checkbox.checked { background: var(--accent); border-color: var(--accent); color: #1a1a2e; }
+
+        /* ===== SHORTCUTS MODAL ===== */
+        .shortcuts-list { display: grid; gap: 10px; margin-top: 8px; }
+        .shortcut-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .shortcut-row:last-child { border-bottom: none; }
+        .shortcut-row .desc { font-size: 0.9em; color: var(--text); }
+        .shortcut-row .keys { display: flex; gap: 4px; }
+        .shortcut-row .keys kbd { background: var(--input-bg); border: 1px solid var(--border-strong); border-bottom-width: 2px; padding: 3px 8px; border-radius: 5px; font-family: monospace; font-size: 0.78em; color: var(--text); }
+
+        /* ===== QR CODE ===== */
+        .qr-container { text-align: center; padding: 20px; }
+        .qr-container img { max-width: 200px; border-radius: 8px; background: white; padding: 10px; }
+
+        /* ===== CHIP ===== */
+        .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--accent-soft); color: #8b6f1a; border-radius: 12px; font-size: 0.75em; font-weight: 600; }
+        [data-theme="dark"] .chip { color: var(--accent); }
+
+        /* ===== PIE CHART ===== */
+        .pie-chart { width: 200px; height: 200px; margin: 0 auto; }
+        .pie-chart text { font-family: var(--font-sans); font-size: 8px; font-weight: 600; fill: white; }
+
+        /* ===== IMPROVED MODALS ===== */
+        .modal { box-shadow: var(--shadow-lg); border: 1px solid var(--border); }
+        .modal h3 { font-family: var(--font-serif); font-weight: 600; }
+
         /* ===== EMPTY STATE ===== */
         .empty-state { text-align: center; padding: 50px 20px; color: var(--text-light); }
         .empty-state .icon { font-size: 3.5em; margin-bottom: 10px; opacity: 0.4; }
@@ -341,12 +605,14 @@
 <!-- HEADER -->
 <div class="header">
     <div class="header-top">
-        <h1>A Minha Biblioteca</h1>
+        <div class="header-title">
+            <span class="logo-icon">📚</span>
+            <h1>A Minha Biblioteca</h1>
+            <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
+        </div>
         <div class="header-actions">
-            <div class="font-size-controls">
-                <button class="font-size-btn" onclick="changeFontSize(-1)" title="Diminuir letra">A-</button>
-                <button class="font-size-btn" onclick="changeFontSize(1)" title="Aumentar letra">A+</button>
-            </div>
+            <button class="header-btn" onclick="openCommandPalette()" id="cmdBtn" title="Procurar (Ctrl+K)">⌘</button>
+            <button class="header-btn" onclick="openShortcutsModal()" title="Atalhos (?)">?</button>
             <button class="header-btn" onclick="toggleDarkMode()" id="themeBtn" title="Modo escuro">🌙</button>
             <button class="header-btn" onclick="toggleStats()" title="Estatisticas">📊</button>
             <button class="header-btn" onclick="suggestRandom()" title="Sugestao aleatoria">🎲</button>
@@ -354,13 +620,15 @@
         </div>
     </div>
     <div class="stats-bar">
-        <span id="statTotal">0 livros</span>
-        <span>|</span>
-        <span id="statLent">0 emprestados</span>
-        <span>|</span>
-        <span id="statRead">0 lidos</span>
-        <span>|</span>
-        <span id="statValue">0.00 EUR</span>
+        <span><strong id="statTotal">0</strong> livros</span>
+        <span>·</span>
+        <span><strong id="statLent">0</strong> emprestados</span>
+        <span>·</span>
+        <span><strong id="statRead">0</strong> lidos</span>
+        <span>·</span>
+        <span id="statStreak">🔥 0 dias</span>
+        <span>·</span>
+        <span><strong id="statValue">0€</strong></span>
     </div>
 </div>
 
@@ -375,12 +643,45 @@
         <button class="btn btn-accent" onclick="dismissOnboarding(); toggleForm();">Adicionar primeiro livro</button>
     </div>
 
-    <!-- READING GOAL -->
+    <!-- READING GOAL RING -->
     <div class="reading-goal" id="readingGoal">
-        <div class="goal-progress">
-            <div class="goal-text"><strong id="goalCurrent">0</strong> de <strong id="goalTarget">12</strong> livros lidos em 2026 <button class="goal-edit" onclick="editGoal()">✏️</button></div>
-            <div class="goal-bar"><div class="goal-fill" id="goalFill" style="width:0%"></div></div>
+        <div class="goal-ring">
+            <svg viewBox="0 0 80 80">
+                <defs>
+                    <linearGradient id="gradRing" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#c9a227"/>
+                        <stop offset="100%" stop-color="#e67e22"/>
+                    </linearGradient>
+                </defs>
+                <circle class="ring-bg" cx="40" cy="40" r="32"/>
+                <circle class="ring-fill" id="goalRingFill" cx="40" cy="40" r="32" stroke-dasharray="0 201"/>
+            </svg>
+            <div class="ring-value">
+                <span id="goalRingPct">0%</span>
+                <span>Meta</span>
+            </div>
         </div>
+        <div class="goal-info">
+            <h3>Meta de Leitura <span id="goalYear" style="color:var(--text-light);font-weight:500;"></span></h3>
+            <p><strong id="goalCurrent">0</strong> de <strong id="goalTarget">12</strong> livros lidos <button class="goal-edit" onclick="editGoal()" style="background:none;border:none;cursor:pointer;">✏️</button></p>
+            <p id="goalPace" style="font-size:0.78em;color:var(--text-muted);margin-top:4px;"></p>
+        </div>
+    </div>
+
+    <!-- CONTINUE READING SECTION -->
+    <div class="featured-row" id="continueReading" style="display:none;">
+        <div class="featured-title">
+            <h3>📖 Continue a ler <span class="badge" id="continueCount">0</span></h3>
+        </div>
+        <div class="mini-books" id="continueBooks"></div>
+    </div>
+
+    <!-- RECOMMENDATIONS -->
+    <div class="featured-row" id="recommendations" style="display:none;">
+        <div class="featured-title">
+            <h3>✨ Para ler a seguir</h3>
+        </div>
+        <div class="mini-books" id="recommendBooks"></div>
     </div>
 
     <!-- STATS DASHBOARD -->
@@ -493,6 +794,13 @@
             <option value="recent">Recentes</option><option value="title">Titulo A-Z</option><option value="author">Autor A-Z</option>
             <option value="rating">Melhor nota</option><option value="pages">Mais paginas</option><option value="year">Ano</option><option value="price">Preco</option>
         </select>
+        <select id="groupBy" onchange="renderBooks()" title="Agrupar por">
+            <option value="none">Sem grupo</option>
+            <option value="genre">Categoria</option>
+            <option value="author">Autor</option>
+            <option value="year">Ano</option>
+            <option value="readingStatus">Estado</option>
+        </select>
         <div class="view-toggle">
             <button class="view-btn active" onclick="setView('grid',this)" title="Grelha">▦</button>
             <button class="view-btn" onclick="setView('list',this)" title="Lista">☰</button>
@@ -529,6 +837,26 @@
         <button class="nav-item" onclick="setMobileTab(this,'emprestados')"><span class="nav-icon">🤝</span>Emprestados</button>
         <button class="nav-item" onclick="setMobileTab(this,'favorites')"><span class="nav-icon">❤️</span>Favoritos</button>
     </div>
+</div>
+
+<!-- COMMAND PALETTE -->
+<div class="cmd-overlay" id="cmdPalette" onclick="if(event.target===this)closeCommandPalette()">
+    <div class="cmd-box">
+        <div class="cmd-search">
+            <span>🔍</span>
+            <input type="text" id="cmdInput" placeholder="Procurar livro ou comando..." oninput="renderCmdResults()" onkeydown="handleCmdKey(event)">
+            <span class="cmd-kbd">ESC</span>
+        </div>
+        <div class="cmd-results" id="cmdResults"></div>
+    </div>
+</div>
+
+<!-- BULK ACTION BAR -->
+<div class="bulk-bar" id="bulkBar">
+    <span class="count" id="bulkCount">0 selecionados</span>
+    <button onclick="bulkMarkRead()">Marcar lidos</button>
+    <button onclick="bulkDelete()">Apagar</button>
+    <button onclick="exitBulkMode()">Cancelar</button>
 </div>
 
 <!-- COVER SCANNER INPUT -->
@@ -590,6 +918,31 @@
 <!-- DETAIL MODAL -->
 <div class="modal-overlay" id="detailModal">
     <div class="modal" id="detailContent"></div>
+</div>
+
+<!-- SHORTCUTS MODAL -->
+<div class="modal-overlay" id="shortcutsModal">
+    <div class="modal">
+        <h3>Atalhos de teclado</h3>
+        <div class="shortcuts-list">
+            <div class="shortcut-row"><span class="desc">Abrir pesquisa / comandos</span><div class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Novo livro</span><div class="keys"><kbd>N</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Sugestao aleatoria</span><div class="keys"><kbd>R</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Estatisticas</span><div class="keys"><kbd>S</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Modo escuro</span><div class="keys"><kbd>D</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Modo seleccao</span><div class="keys"><kbd>B</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Mostrar atalhos</span><div class="keys"><kbd>?</kbd></div></div>
+            <div class="shortcut-row"><span class="desc">Fechar / Cancelar</span><div class="keys"><kbd>Esc</kbd></div></div>
+        </div>
+        <div style="margin-top:15px;text-align:center;">
+            <button class="btn btn-outline btn-sm" onclick="closeModal('shortcutsModal')">Fechar</button>
+        </div>
+    </div>
+</div>
+
+<!-- QR CODE MODAL -->
+<div class="modal-overlay" id="qrModal">
+    <div class="modal" id="qrContent"></div>
 </div>
 
 <script>
@@ -820,64 +1173,86 @@ function renderBooks() {
     document.getElementById('emptyState').style.display = books.length === 0 ? 'block' : 'none';
     document.getElementById('resultCount').textContent = `${books.length} livro${books.length !== 1 ? 's' : ''}`;
 
-    books.forEach(book => {
-        const isLent = book.lentTo && book.lentTo !== '';
-        const idx = book._i;
-        const rs = book.readingStatus || 'unread';
-        let statusText = 'NA ESTANTE', statusClass = 'status-available';
-        if (isLent) { statusText = 'EMPRESTADO'; statusClass = 'status-lent'; }
-        else if (rs === 'reading') { statusText = 'A LER'; statusClass = 'status-reading'; }
-        else if (rs === 'read') { statusText = 'LIDO'; statusClass = 'status-read'; }
+    // Group by
+    var groupByEl = document.getElementById('groupBy');
+    var groupBy = groupByEl ? groupByEl.value : 'none';
+    var grouped = groupBooks(books, groupBy);
 
-        const progress = book.pages > 0 ? Math.min(100, Math.round(((book.pagesRead||0)/book.pages)*100)) : 0;
-        const coverHtml = book.cover ? `<img src="${esc(book.cover)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=no-cover>📖</div>'">` : '<div class="no-cover">📖</div>';
-        const catColor = getCategoryColor(book.genre);
-
-        let title = esc(book.title);
-        let author = esc(book.author || 'Autor desconhecido');
-        if (query) { title = highlightText(title, query); author = highlightText(author, query); }
-
-        const daysLent = isLent && book.loanDate ? daysSince(book.loanDate) : 0;
-        const tags = (book.tags || '').split(',').filter(t => t.trim()).map(t => `<span class="tag">${esc(t.trim())}</span>`).join('');
-
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-            <div class="card-badges">
-                <span class="status-badge ${statusClass}">${statusText}</span>
-                <button class="fav-btn ${book.favorite ? 'active' : ''}" onclick="event.stopPropagation();toggleFav(${idx})">${book.favorite ? '❤️' : '🤍'}</button>
-            </div>
-            <div class="card-cover" onclick="showDetail(${idx})">
-                ${coverHtml}
-                ${progress > 0 ? `<div class="reading-progress-bar"><div class="reading-progress-fill" style="width:${progress}%"></div></div>` : ''}
-            </div>
-            <div class="card-content">
-                <span class="card-genre" style="color:${catColor}">${esc(book.genre || 'Geral')}</span>
-                <div class="card-title">${title}</div>
-                ${book.subtitle ? `<div style="font-size:0.8em;color:var(--text-light);margin-bottom:2px;font-style:italic;">${esc(book.subtitle)}</div>` : ''}
-                <div class="card-author">${author}</div>
-                <div class="rating-stars" onclick="event.stopPropagation()">${renderStarsInteractive(book.rating||0, idx)}</div>
-                <div class="card-meta">
-                    ${book.year ? `<span>${book.year}</span>` : ''}
-                    ${book.pages ? `<span>${book.pages}p</span>` : ''}
-                    ${book.publisherMain ? `<span>${esc(book.publisherMain)}</span>` : ''}
-                    ${book.series ? `<span>${esc(book.series)}</span>` : ''}
-                </div>
-                <p class="card-summary">${esc((book.summary||'').substring(0,90))}${(book.summary||'').length > 90 ? '...' : ''}</p>
-                ${tags ? `<div class="card-tags">${tags}</div>` : ''}
-                ${isLent ? `<div class="loan-info"><strong>${esc(book.lentTo)}</strong> - ${esc(book.loanDate||'')} ${daysLent > 30 ? `<span class="overdue">(${daysLent} dias!)</span>` : `(${daysLent}d)`}</div>` : ''}
-                <div class="card-actions">
-                    ${isLent ? `<button class="btn btn-success btn-xs" onclick="returnBook(${idx})">Devolvido</button>` : `<button class="btn btn-accent btn-xs" onclick="openLoanModal(${idx})">Emprestar</button>`}
-                    <button class="btn btn-outline btn-xs" onclick="editBook(${idx})">✏️</button>
-                    <button class="btn btn-outline btn-xs" onclick="deleteBook(${idx})" style="color:var(--danger);">🗑️</button>
-                </div>
-            </div>`;
-        grid.appendChild(card);
-    });
+    if (grouped) {
+        var keys = Object.keys(grouped).sort();
+        keys.forEach(function(key) {
+            var header = document.createElement('div');
+            header.className = 'group-header';
+            header.style.gridColumn = '1 / -1';
+            header.innerHTML = esc(key) + ' <span>' + grouped[key].length + ' livro' + (grouped[key].length !== 1 ? 's' : '') + '</span>';
+            grid.appendChild(header);
+            grouped[key].forEach(function(book) { grid.appendChild(buildCard(book, query)); });
+        });
+    } else {
+        books.forEach(function(book) { grid.appendChild(buildCard(book, query)); });
+    }
 
     updateStats();
     updateTabs();
     updateGoal();
+}
+
+function buildCard(book, query) {
+    var isLent = book.lentTo && book.lentTo !== '';
+    var idx = book._i;
+    var rs = book.readingStatus || 'unread';
+    var statusText = 'NA ESTANTE', statusClass = 'status-available';
+    if (isLent) { statusText = 'EMPRESTADO'; statusClass = 'status-lent'; }
+    else if (rs === 'reading') { statusText = 'A LER'; statusClass = 'status-reading'; }
+    else if (rs === 'read') { statusText = 'LIDO'; statusClass = 'status-read'; }
+
+    var progress = book.pages > 0 ? Math.min(100, Math.round(((book.pagesRead||0)/book.pages)*100)) : 0;
+    var coverHtml = book.cover ? '<img src="' + esc(book.cover) + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=no-cover>📖</div>\'">' : '<div class="no-cover">📖</div>';
+    var catColor = getCategoryColor(book.genre);
+
+    var title = esc(book.title);
+    var author = esc(book.author || 'Autor desconhecido');
+    if (query) { title = highlightText(title, query); author = highlightText(author, query); }
+
+    var daysLent = isLent && book.loanDate ? daysSince(book.loanDate) : 0;
+    var tags = (book.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) { return '<span class="tag">' + esc(t.trim()) + '</span>'; }).join('');
+
+    var card = document.createElement('div');
+    card.className = 'card' + (bulkSelected.has(idx) ? ' selected' : '');
+    var checkboxHtml = '<div class="card-checkbox ' + (bulkSelected.has(idx) ? 'checked' : '') + '" onclick="toggleBulkSelect(' + idx + ', event)">' + (bulkSelected.has(idx) ? '✓' : '') + '</div>';
+    card.innerHTML =
+        checkboxHtml +
+        '<div class="card-badges">' +
+            '<span class="status-badge ' + statusClass + '">' + statusText + '</span>' +
+            '<button class="fav-btn ' + (book.favorite ? 'active' : '') + '" onclick="event.stopPropagation();toggleFav(' + idx + ')">' + (book.favorite ? '❤️' : '🤍') + '</button>' +
+        '</div>' +
+        '<div class="card-cover" onclick="' + (bulkMode ? 'toggleBulkSelect(' + idx + ', event)' : 'showDetail(' + idx + ')') + '">' +
+            coverHtml +
+            (progress > 0 ? '<div class="reading-progress-bar"><div class="reading-progress-fill" style="width:' + progress + '%"></div></div>' : '') +
+        '</div>' +
+        '<div class="card-content">' +
+            '<span class="card-genre" style="color:' + catColor + '">' + esc(book.genre || 'Geral') + '</span>' +
+            '<div class="card-title">' + title + '</div>' +
+            (book.subtitle ? '<div style="font-size:0.8em;color:var(--text-light);margin-bottom:2px;font-style:italic;">' + esc(book.subtitle) + '</div>' : '') +
+            '<div class="card-author">' + author + '</div>' +
+            '<div class="rating-stars" onclick="event.stopPropagation()">' + renderStarsInteractive(book.rating||0, idx) + '</div>' +
+            '<div class="card-meta">' +
+                (book.year ? '<span>📅 ' + book.year + '</span>' : '') +
+                (book.pages ? '<span>📄 ' + book.pages + 'p</span>' : '') +
+                (book.publisherMain ? '<span>🏢 ' + esc(book.publisherMain) + '</span>' : '') +
+                (book.series ? '<span>📚 ' + esc(book.series) + '</span>' : '') +
+            '</div>' +
+            '<p class="card-summary">' + esc((book.summary||'').substring(0,90)) + ((book.summary||'').length > 90 ? '...' : '') + '</p>' +
+            (tags ? '<div class="card-tags">' + tags + '</div>' : '') +
+            (isLent ? '<div class="loan-info"><strong>' + esc(book.lentTo) + '</strong> · ' + esc(book.loanDate||'') + ' ' + (daysLent > 30 ? '<span class="overdue">(' + daysLent + ' dias!)</span>' : '(' + daysLent + 'd)') + '</div>' : '') +
+            '<div class="card-actions">' +
+                (isLent ? '<button class="btn btn-success btn-xs" onclick="returnBook(' + idx + ')">Devolvido</button>' : '<button class="btn btn-accent btn-xs" onclick="openLoanModal(' + idx + ')">Emprestar</button>') +
+                '<button class="btn btn-outline btn-xs" onclick="editBook(' + idx + ')" title="Editar">✏️</button>' +
+                '<button class="btn btn-outline btn-xs" onclick="showQRCode(' + idx + ')" title="QR Code">▦</button>' +
+                '<button class="btn btn-outline btn-xs" onclick="deleteBook(' + idx + ')" title="Apagar" style="color:var(--danger);">🗑️</button>' +
+            '</div>' +
+        '</div>';
+    return card;
 }
 
 function renderStarsInteractive(rating, bookIdx) {
@@ -931,13 +1306,58 @@ function updateGenreDatalist() {
     document.getElementById('genreList').innerHTML = genres.map(g => `<option value="${esc(g)}">`).join('');
 }
 
+function animateNumber(el, target, suffix) {
+    suffix = suffix || '';
+    var current = parseInt(el.dataset.val || '0');
+    if (current === target) { el.textContent = target + suffix; return; }
+    var diff = target - current;
+    var steps = 20;
+    var step = diff / steps;
+    var i = 0;
+    clearInterval(el._timer);
+    el._timer = setInterval(function() {
+        i++;
+        var v = Math.round(current + step * i);
+        if (i >= steps) { v = target; clearInterval(el._timer); }
+        el.textContent = v + suffix;
+    }, 25);
+    el.dataset.val = target;
+}
+
 function updateStats() {
-    const t = library.length, l = library.filter(b => b.lentTo).length, r = library.filter(b => b.readingStatus === 'read').length;
-    const val = library.reduce((s, b) => s + (parseFloat(b.price) || 0), 0);
-    document.getElementById('statTotal').textContent = `${t} livro${t!==1?'s':''}`;
-    document.getElementById('statLent').textContent = `${l} emprestado${l!==1?'s':''}`;
-    document.getElementById('statRead').textContent = `${r} lido${r!==1?'s':''}`;
-    document.getElementById('statValue').textContent = val > 0 ? `${val.toFixed(2)} EUR` : '';
+    var t = library.length;
+    var l = library.filter(function(b) { return b.lentTo; }).length;
+    var r = library.filter(function(b) { return b.readingStatus === 'read'; }).length;
+    var val = library.reduce(function(s, b) { return s + (parseFloat(b.price) || 0); }, 0);
+
+    animateNumber(document.getElementById('statTotal'), t);
+    animateNumber(document.getElementById('statLent'), l);
+    animateNumber(document.getElementById('statRead'), r);
+
+    document.getElementById('statValue').textContent = val > 0 ? Math.round(val) + '€' : '0€';
+
+    // Reading streak
+    var streak = computeReadingStreak();
+    document.getElementById('statStreak').innerHTML = '🔥 ' + streak + ' dia' + (streak !== 1 ? 's' : '');
+}
+
+function computeReadingStreak() {
+    // Dias consecutivos com livros terminados
+    var dates = library.map(function(b) { return b.readEnd; }).filter(Boolean).sort().reverse();
+    if (dates.length === 0) return 0;
+    var streak = 0;
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    var checkDate = new Date(today);
+    var uniqueDates = [...new Set(dates)];
+    for (var i = 0; i < uniqueDates.length; i++) {
+        var d = new Date(uniqueDates[i]);
+        d.setHours(0,0,0,0);
+        var diffDays = Math.round((checkDate - d) / 86400000);
+        if (diffDays <= 1) { streak++; checkDate = d; }
+        else break;
+    }
+    return streak;
 }
 
 function updateTabs() {
@@ -960,11 +1380,92 @@ function updateTabs() {
 }
 
 function updateGoal() {
-    const yr = new Date().getFullYear();
-    const read = library.filter(b => b.readingStatus === 'read' && b.readEnd && b.readEnd.startsWith(yr)).length;
+    var yr = new Date().getFullYear();
+    var read = library.filter(function(b) { return b.readingStatus === 'read' && b.readEnd && b.readEnd.startsWith(yr); }).length;
+    var pct = Math.min(100, Math.round((read/readingGoal)*100));
+    var goalYearEl = document.getElementById('goalYear');
+    if (goalYearEl) goalYearEl.textContent = yr;
     document.getElementById('goalCurrent').textContent = read;
     document.getElementById('goalTarget').textContent = readingGoal;
-    document.getElementById('goalFill').style.width = Math.min(100, Math.round((read/readingGoal)*100)) + '%';
+
+    var ring = document.getElementById('goalRingFill');
+    if (ring) {
+        var circumference = 2 * Math.PI * 32;
+        var offset = circumference * (pct / 100);
+        ring.setAttribute('stroke-dasharray', offset + ' ' + (circumference - offset));
+    }
+    var pctEl = document.getElementById('goalRingPct');
+    if (pctEl) pctEl.textContent = pct + '%';
+
+    // Pace calculator
+    var paceEl = document.getElementById('goalPace');
+    if (paceEl) {
+        var now = new Date();
+        var startOfYear = new Date(yr, 0, 1);
+        var endOfYear = new Date(yr, 11, 31);
+        var daysPast = Math.max(1, Math.ceil((now - startOfYear) / 86400000));
+        var daysTotal = Math.ceil((endOfYear - startOfYear) / 86400000);
+        var expectedByNow = Math.round((readingGoal / daysTotal) * daysPast);
+        var diff = read - expectedByNow;
+        if (read >= readingGoal) paceEl.innerHTML = '🎉 Meta alcançada!';
+        else if (diff >= 0) paceEl.innerHTML = '✨ Em bom ritmo (+' + diff + ')';
+        else paceEl.innerHTML = '📖 ' + Math.abs(diff) + ' livro(s) atras do ritmo';
+    }
+
+    renderContinueReading();
+    renderRecommendations();
+}
+
+// ============ CONTINUE READING + RECOMMENDATIONS ============
+function renderContinueReading() {
+    var reading = library.filter(function(b) { return b.readingStatus === 'reading'; })
+        .sort(function(a,b) { return (b.addedAt||0) - (a.addedAt||0); }).slice(0, 10);
+    var section = document.getElementById('continueReading');
+    var container = document.getElementById('continueBooks');
+    if (!section || !container) return;
+    if (reading.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    document.getElementById('continueCount').textContent = reading.length;
+    container.innerHTML = reading.map(function(b) {
+        var idx = library.indexOf(b);
+        return '<div class="mini-book" onclick="showDetail(' + idx + ')">' +
+            '<div class="mini-book-cover">' +
+                (b.cover ? '<img src="' + esc(b.cover) + '" onerror="this.outerHTML=\'<div class=no-cover-mini>📖</div>\'">' : '<div class="no-cover-mini">📖</div>') +
+            '</div>' +
+            '<div class="mini-book-title">' + esc(b.title) + '</div>' +
+            '<div class="mini-book-author">' + esc(b.author || '') + '</div>' +
+        '</div>';
+    }).join('');
+}
+
+function renderRecommendations() {
+    // Baseado nos generos dos favoritos, mostra livros nao lidos dos mesmos generos
+    var favGenres = {};
+    library.filter(function(b) { return b.favorite || b.rating >= 4; }).forEach(function(b) {
+        if (b.genre) favGenres[b.genre] = (favGenres[b.genre] || 0) + 1;
+    });
+
+    var toRead = library.filter(function(b) {
+        return (!b.readingStatus || b.readingStatus === 'unread') && !b.lentTo && favGenres[b.genre];
+    }).sort(function(a, b) {
+        return (favGenres[b.genre] || 0) - (favGenres[a.genre] || 0);
+    }).slice(0, 10);
+
+    var section = document.getElementById('recommendations');
+    var container = document.getElementById('recommendBooks');
+    if (!section || !container) return;
+    if (toRead.length < 2) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    container.innerHTML = toRead.map(function(b) {
+        var idx = library.indexOf(b);
+        return '<div class="mini-book" onclick="showDetail(' + idx + ')">' +
+            '<div class="mini-book-cover">' +
+                (b.cover ? '<img src="' + esc(b.cover) + '" onerror="this.outerHTML=\'<div class=no-cover-mini>📖</div>\'">' : '<div class="no-cover-mini">📖</div>') +
+            '</div>' +
+            '<div class="mini-book-title">' + esc(b.title) + '</div>' +
+            '<div class="mini-book-author">' + esc(b.author || '') + '</div>' +
+        '</div>';
+    }).join('');
 }
 
 function editGoal() {
@@ -985,7 +1486,7 @@ function saveBook() {
     const editIdx = parseInt(document.getElementById('editIndex').value);
     const dup = library.findIndex((b, i) => b.title.toLowerCase() === title.toLowerCase() && i !== editIdx);
     if (dup >= 0 && editIdx < 0) {
-        showToast('Este livro ja existe na biblioteca!', 'warning');
+        showToast('Ja existe um livro com este titulo: "' + library[dup].title + '"', 'warning', 'editBook(' + dup + ')', 'Ver existente');
         return;
     }
 
@@ -1170,8 +1671,23 @@ function closeModal(id) { document.getElementById(id).classList.remove('visible'
 
 document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('visible'); }));
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible')); resolveConfirm(false); }
-    if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) toggleForm();
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.visible, .cmd-overlay.visible').forEach(function(m) { m.classList.remove('visible'); });
+        resolveConfirm(false);
+        if (bulkMode) exitBulkMode();
+    }
+    // Ctrl+K / Cmd+K -> command palette
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openCommandPalette(); return; }
+
+    var inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+    if (inInput) return;
+
+    if (e.key === 'n') toggleForm();
+    if (e.key === 'r') suggestRandom();
+    if (e.key === 's') toggleStats();
+    if (e.key === 'd') toggleDarkMode();
+    if (e.key === 'b') toggleBulkMode();
+    if (e.key === '?') openShortcutsModal();
 });
 
 // Scroll to top
@@ -1205,27 +1721,65 @@ function toggleStats() {
 }
 
 function renderStats() {
-    const t = library.length;
-    const read = library.filter(b => b.readingStatus === 'read').length;
-    const reading = library.filter(b => b.readingStatus === 'reading').length;
-    const lent = library.filter(b => b.lentTo).length;
-    const favs = library.filter(b => b.favorite).length;
-    const totalPages = library.reduce((s,b) => s + (b.pages||0), 0);
-    const totalValue = library.reduce((s,b) => s + (parseFloat(b.price)||0), 0);
-    const avgRating = t > 0 ? (library.reduce((s,b) => s + (b.rating||0), 0) / t).toFixed(1) : 0;
+    var t = library.length;
+    var read = library.filter(function(b) { return b.readingStatus === 'read'; }).length;
+    var reading = library.filter(function(b) { return b.readingStatus === 'reading'; }).length;
+    var lent = library.filter(function(b) { return b.lentTo; }).length;
+    var favs = library.filter(function(b) { return b.favorite; }).length;
+    var totalPages = library.reduce(function(s,b) { return s + (b.pages||0); }, 0);
+    var pagesRead = library.reduce(function(s,b) { return s + (b.pagesRead||0); }, 0);
+    var totalValue = library.reduce(function(s,b) { return s + (parseFloat(b.price)||0); }, 0);
+    var avgRating = t > 0 ? (library.reduce(function(s,b) { return s + (b.rating||0); }, 0) / t).toFixed(1) : 0;
 
     document.getElementById('statsGrid').innerHTML = [
         {v:t,l:'Total livros'},{v:read,l:'Lidos'},{v:reading,l:'A ler'},{v:lent,l:'Emprestados'},
-        {v:favs,l:'Favoritos'},{v:totalPages.toLocaleString(),l:'Paginas total'},
-        {v:avgRating,l:'Nota media'},{v:totalValue.toFixed(0)+'€',l:'Valor total'}
-    ].map(s => `<div class="stat-card"><div class="stat-value">${s.v}</div><div class="stat-label">${s.l}</div></div>`).join('');
+        {v:favs,l:'Favoritos'},{v:totalPages.toLocaleString('pt-PT'),l:'Paginas total'},
+        {v:avgRating + '★',l:'Nota media'},{v:Math.round(totalValue)+'€',l:'Valor total'}
+    ].map(function(s) { return '<div class="stat-card"><div class="stat-value">' + s.v + '</div><div class="stat-label">' + s.l + '</div></div>'; }).join('');
 
-    const genres = {};
-    library.forEach(b => { const g = b.genre || 'Geral'; genres[g] = (genres[g]||0) + 1; });
-    const sorted = Object.entries(genres).sort((a,b) => b[1]-a[1]);
-    const max = sorted.length > 0 ? sorted[0][1] : 1;
-    document.getElementById('categoryBars').innerHTML = '<h4 style="margin-bottom:10px;font-size:0.9em;">Livros por categoria</h4>' +
-        sorted.map(([g,c],i) => `<div class="cat-bar-row"><div class="cat-bar-label">${esc(g)}</div><div class="cat-bar"><div class="cat-bar-fill" style="width:${(c/max*100)}%;background:${CATEGORY_COLORS[i%CATEGORY_COLORS.length]}"></div></div><div class="cat-bar-count">${c}</div></div>`).join('');
+    // Pie chart + bars
+    var genres = {};
+    library.forEach(function(b) { var g = b.genre || 'Geral'; genres[g] = (genres[g]||0) + 1; });
+    var sorted = Object.entries(genres).sort(function(a,b) { return b[1]-a[1]; });
+
+    // Pie chart
+    var total = sorted.reduce(function(s, g) { return s + g[1]; }, 0);
+    var pieHtml = '';
+    if (total > 0 && sorted.length > 1) {
+        var cx = 100, cy = 100, r = 80;
+        var startAngle = -Math.PI / 2;
+        sorted.slice(0, 8).forEach(function(g, i) {
+            var slice = g[1] / total;
+            var endAngle = startAngle + slice * Math.PI * 2;
+            var x1 = cx + r * Math.cos(startAngle);
+            var y1 = cy + r * Math.sin(startAngle);
+            var x2 = cx + r * Math.cos(endAngle);
+            var y2 = cy + r * Math.sin(endAngle);
+            var largeArc = slice > 0.5 ? 1 : 0;
+            var color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+            pieHtml += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + largeArc + ',1 ' + x2 + ',' + y2 + ' Z" fill="' + color + '"></path>';
+            // Label
+            var midAngle = (startAngle + endAngle) / 2;
+            var lx = cx + (r * 0.65) * Math.cos(midAngle);
+            var ly = cy + (r * 0.65) * Math.sin(midAngle);
+            if (slice > 0.05) {
+                pieHtml += '<text x="' + lx + '" y="' + ly + '" text-anchor="middle" dy="3">' + Math.round(slice * 100) + '%</text>';
+            }
+            startAngle = endAngle;
+        });
+    }
+
+    var max = sorted.length > 0 ? sorted[0][1] : 1;
+    var barsHtml = sorted.map(function(entry, i) {
+        var g = entry[0], c = entry[1];
+        return '<div class="cat-bar-row"><div class="cat-bar-label">' + esc(g) + '</div><div class="cat-bar"><div class="cat-bar-fill" style="width:' + (c/max*100) + '%;background:' + CATEGORY_COLORS[i%CATEGORY_COLORS.length] + '"></div></div><div class="cat-bar-count">' + c + '</div></div>';
+    }).join('');
+
+    document.getElementById('categoryBars').innerHTML =
+        '<h4 style="margin-bottom:12px;font-size:0.95em;font-family:var(--font-serif);">Distribuicao por categoria</h4>' +
+        (pieHtml ? '<svg class="pie-chart" viewBox="0 0 200 200">' + pieHtml + '</svg>' : '') +
+        '<div style="margin-top:12px;">' + barsHtml + '</div>' +
+        '<p style="font-size:0.78em;color:var(--text-light);margin-top:10px;text-align:center;">📖 Leste ' + pagesRead.toLocaleString('pt-PT') + ' paginas no total</p>';
 }
 
 // ============ RANDOM SUGGESTION ============
@@ -1751,6 +2305,264 @@ function dismissOnboarding() { document.getElementById('onboarding').style.displ
     }
 })();
 function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
+
+// ============ COMMAND PALETTE ============
+var cmdSelectedIdx = 0;
+var cmdItems = [];
+
+function openCommandPalette() {
+    document.getElementById('cmdPalette').classList.add('visible');
+    document.getElementById('cmdInput').value = '';
+    renderCmdResults();
+    setTimeout(function() { document.getElementById('cmdInput').focus(); }, 50);
+}
+
+function closeCommandPalette() {
+    document.getElementById('cmdPalette').classList.remove('visible');
+}
+
+function renderCmdResults() {
+    var q = document.getElementById('cmdInput').value.toLowerCase().trim();
+    var results = document.getElementById('cmdResults');
+    cmdItems = [];
+
+    // Commands
+    var commands = [
+        { icon: '➕', title: 'Adicionar novo livro', desc: 'Criar uma nova entrada', action: 'toggleForm()' },
+        { icon: '📷', title: 'Scanner de ISBN', desc: 'Ler codigo de barras', action: 'openScanner()' },
+        { icon: '📚', title: 'Scanner de Capa', desc: 'Fotografar capa do livro', action: 'openCoverScanner()' },
+        { icon: '🎲', title: 'Sugestao aleatoria', desc: 'Qual livro ler a seguir?', action: 'suggestRandom()' },
+        { icon: '📊', title: 'Ver estatisticas', desc: 'Dashboard completo', action: 'toggleStats()' },
+        { icon: '🌙', title: 'Modo escuro', desc: 'Alternar tema', action: 'toggleDarkMode()' },
+        { icon: '📤', title: 'Exportar JSON', desc: 'Backup dos livros', action: 'exportJSON()' },
+        { icon: '📄', title: 'Exportar CSV', desc: 'Folha de calculo', action: 'exportCSV()' },
+        { icon: '🖨️', title: 'Imprimir biblioteca', desc: 'Lista em papel', action: 'printLibrary()' },
+        { icon: '☑️', title: 'Modo seleccao', desc: 'Seleciona varios livros', action: 'toggleBulkMode()' }
+    ];
+
+    var html = '';
+    var filtered = q ? commands.filter(function(c) { return c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q); }) : commands;
+    if (filtered.length > 0) {
+        html += '<div class="cmd-section">Comandos</div>';
+        filtered.forEach(function(c) {
+            cmdItems.push(c);
+            var idx = cmdItems.length - 1;
+            html += '<div class="cmd-item' + (idx === 0 ? ' selected' : '') + '" data-idx="' + idx + '" onclick="executeCmd(' + idx + ')">' +
+                '<div class="cmd-item-icon">' + c.icon + '</div>' +
+                '<div class="cmd-item-text"><div class="cmd-item-title">' + esc(c.title) + '</div><div class="cmd-item-desc">' + esc(c.desc) + '</div></div>' +
+            '</div>';
+        });
+    }
+
+    // Books
+    if (q) {
+        var books = library.filter(function(b) {
+            return (b.title || '').toLowerCase().includes(q) ||
+                   (b.author || '').toLowerCase().includes(q);
+        }).slice(0, 10);
+        if (books.length > 0) {
+            html += '<div class="cmd-section">Livros</div>';
+            books.forEach(function(b) {
+                var idx = library.indexOf(b);
+                cmdItems.push({ isBook: true, bookIdx: idx });
+                var cmdIdx = cmdItems.length - 1;
+                html += '<div class="cmd-item" data-idx="' + cmdIdx + '" onclick="executeCmd(' + cmdIdx + ')">' +
+                    '<div class="cmd-item-icon">📖</div>' +
+                    '<div class="cmd-item-text"><div class="cmd-item-title">' + esc(b.title) + '</div><div class="cmd-item-desc">' + esc(b.author || '') + '</div></div>' +
+                '</div>';
+            });
+        }
+    }
+
+    if (cmdItems.length === 0) html = '<div class="cmd-section">Nenhum resultado</div>';
+    results.innerHTML = html;
+    cmdSelectedIdx = 0;
+}
+
+function executeCmd(idx) {
+    var item = cmdItems[idx];
+    closeCommandPalette();
+    if (item.isBook) { showDetail(item.bookIdx); }
+    else { try { eval(item.action); } catch(e) { console.error(e); } }
+}
+
+function handleCmdKey(e) {
+    var items = document.querySelectorAll('.cmd-item');
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        cmdSelectedIdx = Math.min(cmdSelectedIdx + 1, cmdItems.length - 1);
+        updateCmdSelection();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        cmdSelectedIdx = Math.max(cmdSelectedIdx - 1, 0);
+        updateCmdSelection();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cmdItems[cmdSelectedIdx]) executeCmd(cmdSelectedIdx);
+    }
+}
+
+function updateCmdSelection() {
+    document.querySelectorAll('.cmd-item').forEach(function(el, i) {
+        el.classList.toggle('selected', i === cmdSelectedIdx);
+    });
+    var sel = document.querySelector('.cmd-item.selected');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function openShortcutsModal() { openModal('shortcutsModal'); }
+
+// ============ BULK SELECTION ============
+var bulkMode = false;
+var bulkSelected = new Set();
+
+function toggleBulkMode() {
+    bulkMode = !bulkMode;
+    bulkSelected.clear();
+    document.body.classList.toggle('bulk-mode', bulkMode);
+    document.getElementById('bulkBar').classList.toggle('visible', bulkMode);
+    renderBooks();
+    updateBulkCount();
+}
+
+function exitBulkMode() {
+    bulkMode = false;
+    bulkSelected.clear();
+    document.body.classList.remove('bulk-mode');
+    document.getElementById('bulkBar').classList.remove('visible');
+    renderBooks();
+}
+
+function toggleBulkSelect(idx, event) {
+    if (event) { event.stopPropagation(); event.preventDefault(); }
+    if (bulkSelected.has(idx)) bulkSelected.delete(idx);
+    else bulkSelected.add(idx);
+    updateBulkCount();
+    renderBooks();
+}
+
+function updateBulkCount() {
+    document.getElementById('bulkCount').textContent = bulkSelected.size + ' selecionado' + (bulkSelected.size !== 1 ? 's' : '');
+}
+
+async function bulkMarkRead() {
+    if (bulkSelected.size === 0) return;
+    bulkSelected.forEach(function(idx) {
+        library[idx].readingStatus = 'read';
+        if (!library[idx].readEnd) library[idx].readEnd = new Date().toISOString().split('T')[0];
+    });
+    save(); exitBulkMode();
+    showToast(bulkSelected.size + ' livros marcados como lidos', 'success');
+}
+
+async function bulkDelete() {
+    if (bulkSelected.size === 0) return;
+    var ok = await showConfirm('Apagar livros', 'Apagar ' + bulkSelected.size + ' livros? Esta accao nao pode ser desfeita.', 'Apagar');
+    if (!ok) return;
+    var indices = Array.from(bulkSelected).sort(function(a,b) { return b-a; });
+    indices.forEach(function(idx) { library.splice(idx, 1); });
+    save(); exitBulkMode();
+    showToast(indices.length + ' livros apagados', 'success');
+}
+
+// ============ QR CODE ============
+function showQRCode(idx) {
+    var b = library[idx];
+    var data = {
+        title: b.title,
+        author: b.author,
+        isbn: b.isbn || '',
+        year: b.year || ''
+    };
+    var text = 'https://a-minha-biblioteca.vercel.app#' + encodeURIComponent(JSON.stringify(data));
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(text);
+    document.getElementById('qrContent').innerHTML =
+        '<h3>Partilhar: ' + esc(b.title) + '</h3>' +
+        '<div class="qr-container"><img src="' + qrUrl + '" alt="QR Code"></div>' +
+        '<p style="text-align:center;font-size:0.85em;color:var(--text-light);">Scan este QR para ver os detalhes do livro</p>' +
+        '<div style="display:flex;gap:8px;margin-top:15px;">' +
+            '<button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(\'' + text.replace(/'/g, "\\'") + '\').then(function(){showToast(\'Link copiado!\', \'success\');});">Copiar link</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="closeModal(\'qrModal\')">Fechar</button>' +
+        '</div>';
+    openModal('qrModal');
+}
+
+// ============ SYNC STATUS ============
+function setSyncStatus(state, text) {
+    var el = document.getElementById('syncStatus');
+    var txt = document.getElementById('syncText');
+    if (!el || !txt) return;
+    el.classList.remove('offline', 'syncing');
+    if (state === 'offline') el.classList.add('offline');
+    else if (state === 'syncing') el.classList.add('syncing');
+    txt.textContent = text;
+}
+
+window.addEventListener('online', function() { setSyncStatus('online', 'Online'); });
+window.addEventListener('offline', function() { setSyncStatus('offline', 'Offline'); });
+
+// Atualizar sync status durante sincronizacao
+(function() {
+    var originalSync = syncToDb;
+    syncToDb = function() {
+        if (!supabaseClient) return;
+        setSyncStatus('syncing', 'A sincronizar...');
+        var originalSetTimeout = setTimeout;
+        clearTimeout(syncTimeout);
+        syncTimeout = setTimeout(async function() {
+            try {
+                var { data: existing } = await supabaseClient.from('books').select('id');
+                var existingIds = new Set((existing || []).map(function(r) { return r.id; }));
+                var toInsert = [], toUpdate = [];
+                library.forEach(function(book) {
+                    var row = toDbRow(book);
+                    delete row.created_at;
+                    row.updated_at = new Date().toISOString();
+                    if (book.id && existingIds.has(book.id)) { toUpdate.push(row); existingIds.delete(book.id); }
+                    else if (book.id) { toInsert.push(row); }
+                    else { delete row.id; toInsert.push(row); }
+                });
+                var toDelete = Array.from(existingIds);
+                if (toInsert.length > 0) {
+                    var { data: inserted } = await supabaseClient.from('books').insert(toInsert).select('id');
+                    if (inserted) {
+                        var ii = 0;
+                        library.forEach(function(book) { if (!book.id && ii < inserted.length) { book.id = inserted[ii].id; ii++; } });
+                        saveLocal();
+                    }
+                }
+                for (var i = 0; i < toUpdate.length; i++) {
+                    var r = toUpdate[i]; var id = r.id; delete r.id; delete r.created_at;
+                    await supabaseClient.from('books').update(r).eq('id', id);
+                }
+                if (toDelete.length > 0) await supabaseClient.from('books').delete().in('id', toDelete);
+                setSyncStatus('online', 'Sincronizado');
+                setTimeout(function() { setSyncStatus('online', 'Online'); }, 2000);
+            } catch(e) {
+                console.error('Sync error:', e);
+                setSyncStatus('offline', 'Erro sync');
+            }
+        }, 500);
+    };
+})();
+
+// ============ GROUP BY ============
+function groupBooks(books, groupBy) {
+    if (!groupBy || groupBy === 'none') return null;
+    var groups = {};
+    books.forEach(function(b) {
+        var key;
+        if (groupBy === 'readingStatus') {
+            var rs = b.readingStatus || 'unread';
+            key = rs === 'read' ? 'Lidos' : rs === 'reading' ? 'A ler' : 'Por ler';
+        } else {
+            key = b[groupBy] || 'Sem ' + groupBy;
+        }
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(b);
+    });
+    return groups;
+}
 
 // ============ COVER SCANNER (OCR) ============
 function openCoverScanner() {
