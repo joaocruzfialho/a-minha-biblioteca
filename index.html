@@ -623,7 +623,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 7, em 15.04.2026</span>
+                <span class="header-version">Versão 8, em 15.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -2602,6 +2602,77 @@ function openCoverScanner() {
     document.getElementById('coverScanFile').click();
 }
 
+// Pre-processar imagem: resize, greyscale, aumento de contraste/nitidez
+async function preprocessCoverImage(file) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        img.onload = function() {
+            var canvas = document.createElement('canvas');
+            // Resize: maximo 1400px no lado maior (resolucao suficiente para OCR)
+            var MAX = 1400;
+            var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Aumentar contraste e converter para greyscale
+            var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var d = imgData.data;
+            var contrast = 1.4;
+            var intercept = 128 * (1 - contrast);
+            for (var i = 0; i < d.length; i += 4) {
+                // Greyscale perceptual
+                var g = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+                // Contraste
+                g = g * contrast + intercept;
+                g = Math.max(0, Math.min(255, g));
+                d[i] = d[i+1] = d[i+2] = g;
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            canvas.toBlob(function(blob) { resolve({ blob: blob, dataUrl: canvas.toDataURL('image/jpeg', 0.92) }); }, 'image/jpeg', 0.92);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+// Limpar texto OCR: remove lixo comum em capas (editoras, ISBN, numeros, etc)
+function cleanOcrLines(rawText) {
+    var blacklist = /^(romance|ficcao|ficção|literatura|best.?seller|best.?vendas|premio|prémio|autor|author|por |translation|translated|edi[çc][aã]o|edition|volume|vol\.?|cap[ií]tulo|chapter|n[º°]|n\.?\s*\d+|p\.?\s*\d+|isbn|pages?)\b/i;
+    var publisherKeywords = /\b(editora|publishers?|publishing|books?|livros|press|ediciones|ltd|limited|inc\.?|company|publicações|publicacoes|asa|leya|bertrand|gradiva|presença|dom quixote|caminho|porto editora|temas e debates|planeta|objectiva|verso|kalandraka|boggas|booksmile|quetzal|relogio d.?agua|porto|ambar|nova fronteira|rocco|companhia das letras|penguin|random|harper|simon|schuster|houghton|mifflin|vintage|anchor)\b/i;
+    var allDigits = /^[\d\s\-.,:;'"()]+$/;
+
+    return rawText.split(/\r?\n/)
+        .map(function(l) { return l.trim().replace(/\s+/g, ' '); })
+        .filter(function(l) {
+            if (l.length < 3 || l.length > 80) return false;
+            if (allDigits.test(l)) return false;
+            // Precisa de pelo menos 50% letras
+            var letters = (l.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+            if (letters / l.length < 0.5) return false;
+            if (blacklist.test(l)) return false;
+            if (publisherKeywords.test(l)) return false;
+            // Descartar linhas so em MAIUSCULAS se forem curtas (provavel editora/coleccao)
+            if (l.length < 8 && l === l.toUpperCase() && !/\s/.test(l)) return false;
+            return true;
+        });
+}
+
+// Pontuar uma linha como candidata a titulo (mais caracteres alfabeticos, 2-8 palavras tipico)
+function scoreTitleLine(line) {
+    var words = line.split(/\s+/).filter(Boolean).length;
+    var letters = (line.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+    var score = letters;
+    if (words >= 1 && words <= 8) score += 20;
+    if (words >= 2 && words <= 6) score += 10;
+    if (line.length >= 8 && line.length <= 50) score += 15;
+    // Capitulos comecados com maiuscula (titulo/Title Case)
+    if (/^[A-ZÀ-Þ]/.test(line)) score += 5;
+    return score;
+}
+
 async function handleCoverScan(event) {
     var file = event.target.files[0];
     if (!file) return;
@@ -2613,19 +2684,21 @@ async function handleCoverScan(event) {
     var progressBar = document.getElementById('coverScanProgressBar');
     overlay.classList.add('visible');
     status.textContent = 'A preparar imagem...';
-    progressBar.style.width = '5%';
+    progressBar.style.width = '3%';
 
-    // Mostrar preview
     var imgUrl = URL.createObjectURL(file);
     preview.innerHTML = '<img src="' + imgUrl + '" style="width:100%;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">';
 
     try {
-        status.textContent = 'A ler texto da capa (pode demorar 10-20s)...';
+        status.textContent = 'A optimizar imagem...';
+        var processed = await preprocessCoverImage(file);
+        progressBar.style.width = '10%';
 
-        var result = await Tesseract.recognize(file, 'por+eng', {
+        status.textContent = 'A ler texto da capa (pode demorar)...';
+        var result = await Tesseract.recognize(processed.dataUrl, 'por+eng', {
             logger: function(m) {
                 if (m.status === 'recognizing text') {
-                    var pct = Math.round(m.progress * 90) + 10;
+                    var pct = Math.round(m.progress * 80) + 15;
                     progressBar.style.width = pct + '%';
                     status.textContent = 'A ler texto... ' + pct + '%';
                 }
@@ -2635,155 +2708,261 @@ async function handleCoverScan(event) {
         var rawText = (result.data.text || '').trim();
         console.log('OCR raw:', rawText);
 
-        if (!rawText) {
-            status.innerHTML = '<span style="color:var(--danger);">Nao foi possivel ler texto da capa.</span>';
-            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 2500);
-            return;
-        }
-
-        // Extrair possiveis titulos (linhas com pelo menos 3 caracteres, sem muitos simbolos)
-        var lines = rawText.split('\n')
-            .map(function(l) { return l.trim(); })
-            .filter(function(l) { return l.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(l); })
-            .filter(function(l) {
-                // remover linhas com poucos caracteres alfabeticos (lixo OCR)
-                var letters = (l.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
-                return letters / l.length > 0.5;
-            });
+        var lines = cleanOcrLines(rawText);
+        console.log('OCR linhas limpas:', lines);
 
         if (lines.length === 0) {
-            status.innerHTML = '<span style="color:var(--danger);">Texto lido mas nao reconheci um livro.</span>';
-            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 2500);
+            status.innerHTML = '<span style="color:var(--warning);">Nao consegui identificar texto util.</span>';
+            showCoverEditUI('', rawText, imgUrl);
             return;
         }
 
-        // Tentar pesquisar com as linhas mais promissoras
-        // Ordenar por comprimento (linhas maiores sao geralmente titulos mais descritivos)
-        lines.sort(function(a, b) { return b.length - a.length; });
+        // Pontuar linhas e escolher as melhores
+        lines.sort(function(a, b) { return scoreTitleLine(b) - scoreTitleLine(a); });
 
-        // Experimentar as 3 linhas mais longas + combinacoes
-        var candidates = [];
-        if (lines.length >= 1) candidates.push(lines[0]);
-        if (lines.length >= 2) candidates.push(lines[0] + ' ' + lines[1]);
-        if (lines.length >= 2) candidates.push(lines[1]);
-        if (lines.length >= 3) candidates.push(lines[0] + ' ' + lines[2]);
-
-        progressBar.style.width = '95%';
-        status.textContent = 'Texto lido. A pesquisar livro...';
-
-        // Pesquisar cada candidato ate encontrar um resultado
-        var found = null;
-        for (var i = 0; i < candidates.length; i++) {
-            var query = candidates[i].substring(0, 80);
-            try {
-                var resp = await fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(query) + '&limit=5');
-                var data = await resp.json();
-                if (data.docs && data.docs.length > 0) {
-                    found = { source: 'ol', docs: data.docs, query: query };
-                    break;
-                }
-            } catch(e) { console.error('OL err:', e); }
-        }
-
-        // Se OL falhou, tentar Google Books
-        if (!found) {
-            for (var j = 0; j < candidates.length; j++) {
-                var q2 = candidates[j].substring(0, 80);
-                try {
-                    var gbResp = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q2) + '&maxResults=5');
-                    var gbData = await gbResp.json();
-                    if (gbData.items && gbData.items.length > 0) {
-                        found = { source: 'gb', items: gbData.items, query: q2 };
-                        break;
-                    }
-                } catch(e) { console.error('GB err:', e); }
-            }
-        }
-
-        progressBar.style.width = '100%';
-
-        if (!found) {
-            status.innerHTML = '<span style="color:var(--danger);">Livro nao encontrado.</span><br>' +
-                '<span style="font-size:0.8em;">Texto lido: "' + esc(lines[0].substring(0, 60)) + '"</span>';
-            setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 3500);
-            return;
-        }
-
-        // Fechar overlay e mostrar resultados na lista de pesquisa
-        overlay.classList.remove('visible');
-        URL.revokeObjectURL(imgUrl);
-
-        document.getElementById('apiQuery').value = found.query;
-        var rd = document.getElementById('apiResults');
-        rd.classList.add('visible');
-        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Identificado! Seleciona o livro correto:</div>';
-
-        // Mostrar os resultados
-        if (found.source === 'ol') {
-            var resultsHtml = document.createElement('div');
-            found.docs.forEach(function(doc) {
-                var coverId = doc.cover_i;
-                var thumb = coverId ? 'https://covers.openlibrary.org/b/id/' + coverId + '-S.jpg' : '';
-                var author = doc.author_name ? doc.author_name.slice(0,2).join(', ') : 'Autor desconhecido';
-                var year = doc.first_publish_year || '';
-
-                var el = document.createElement('div');
-                el.className = 'api-result-item';
-                if (thumb) {
-                    var img = document.createElement('img');
-                    img.src = thumb; img.alt = '';
-                    img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
-                    el.appendChild(img);
-                } else {
-                    var nt = document.createElement('div');
-                    nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
-                    el.appendChild(nt);
-                }
-                var info = document.createElement('div');
-                info.className = 'api-result-info';
-                info.innerHTML = '<div class="r-title">' + esc(doc.title || '') + '</div>' +
-                    '<div class="r-author">' + esc(author) + '</div>' +
-                    (year ? '<div class="r-year">' + year + '</div>' : '');
-                el.appendChild(info);
-                el.addEventListener('click', function(d) { return function() { selectOLResult(d); }; }(doc));
-                resultsHtml.appendChild(el);
-            });
-            rd.appendChild(resultsHtml);
-        } else {
-            // Google Books
-            found.items.forEach(function(item) {
-                var v = item.volumeInfo;
-                var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
-                var el = document.createElement('div');
-                el.className = 'api-result-item';
-                if (thumb) {
-                    var img = document.createElement('img');
-                    img.src = thumb; img.alt = '';
-                    img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
-                    el.appendChild(img);
-                } else {
-                    var nt = document.createElement('div');
-                    nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
-                    el.appendChild(nt);
-                }
-                var info = document.createElement('div');
-                info.className = 'api-result-info';
-                var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
-                info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
-                    '<div class="r-author">' + esc(author) + '</div>';
-                el.appendChild(info);
-                el.addEventListener('click', function(it) { return function() { selectGoogleBook(it); }; }(item));
-                rd.appendChild(el);
-            });
-        }
-
-        showToast('Livro identificado! Escolhe a edicao correcta.', 'success');
+        // Mostrar UI para o utilizador confirmar/editar o titulo antes de pesquisar
+        showCoverEditUI(lines, rawText, imgUrl);
 
     } catch(e) {
         console.error('Erro OCR:', e);
         status.innerHTML = '<span style="color:var(--danger);">Erro: ' + (e.message || e) + '</span>';
         setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 3000);
     }
+}
+
+// UI para editar o titulo detectado e pesquisar
+function showCoverEditUI(lines, rawText, imgUrl) {
+    var overlay = document.getElementById('coverScanOverlay');
+    var best = Array.isArray(lines) && lines.length > 0 ? lines[0] : '';
+    var secondary = Array.isArray(lines) && lines.length > 1 ? lines[1] : '';
+
+    overlay.innerHTML =
+        '<button class="scanner-close" onclick="closeCoverScan()">&times;</button>' +
+        '<div class="scanner-header" style="max-width:500px;">' +
+            '<h3>Confirma o livro</h3>' +
+            '<div style="margin:10px auto;max-width:180px;"><img src="' + imgUrl + '" style="width:100%;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);"></div>' +
+            '<p style="font-size:0.85em;opacity:0.8;margin-bottom:8px;">Texto detectado na capa. Ajusta se necessario antes de pesquisar:</p>' +
+            '<input type="text" id="coverEditTitle" value="' + esc(best) + '" placeholder="Titulo do livro" style="width:100%;padding:10px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:1em;margin-bottom:8px;">' +
+            '<input type="text" id="coverEditAuthor" value="' + esc(secondary) + '" placeholder="Autor (opcional)" style="width:100%;padding:10px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:0.95em;margin-bottom:10px;">' +
+            (Array.isArray(lines) && lines.length > 0 ? '<div style="text-align:left;margin-bottom:10px;"><p style="font-size:0.78em;opacity:0.7;margin-bottom:4px;">Outras linhas detectadas (clicar para usar):</p><div id="coverSuggestions" style="display:flex;flex-wrap:wrap;gap:5px;">' +
+                lines.slice(0, 8).map(function(l, i) { return '<button onclick="useOcrLine(' + i + ')" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:4px 10px;border-radius:12px;font-size:0.75em;cursor:pointer;font-family:inherit;">' + esc(l.substring(0, 30)) + '</button>'; }).join('') +
+            '</div></div>' : '') +
+            '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+                '<button onclick="searchFromCover()" style="background:var(--accent);color:#1a1a2e;border:none;padding:10px 24px;border-radius:10px;font-weight:700;cursor:pointer;font-family:inherit;font-size:0.95em;">🔍 Pesquisar</button>' +
+                '<button onclick="closeCoverScan()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:10px 20px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.95em;">Cancelar</button>' +
+            '</div>' +
+            (rawText ? '<details style="margin-top:15px;text-align:left;font-size:0.78em;opacity:0.6;"><summary style="cursor:pointer;">Ver texto bruto do OCR</summary><pre style="white-space:pre-wrap;margin-top:5px;">' + esc(rawText) + '</pre></details>' : '') +
+        '</div>';
+    // guardar linhas para uso dos botoes
+    window._ocrLines = lines || [];
+    window._coverImgUrl = imgUrl;
+}
+
+function useOcrLine(idx) {
+    var line = window._ocrLines[idx];
+    if (!line) return;
+    var titleEl = document.getElementById('coverEditTitle');
+    if (titleEl && !titleEl.value.trim()) titleEl.value = line;
+    else {
+        var authorEl = document.getElementById('coverEditAuthor');
+        if (authorEl) authorEl.value = line;
+    }
+}
+
+function closeCoverScan() {
+    var overlay = document.getElementById('coverScanOverlay');
+    overlay.classList.remove('visible');
+    if (window._coverImgUrl) { URL.revokeObjectURL(window._coverImgUrl); window._coverImgUrl = null; }
+    // Restaurar UI original do overlay
+    overlay.innerHTML =
+        '<button class="scanner-close" onclick="document.getElementById(\'coverScanOverlay\').classList.remove(\'visible\')">&times;</button>' +
+        '<div class="scanner-header">' +
+            '<h3>A analisar a capa...</h3>' +
+            '<div id="coverScanPreview" style="margin:15px auto;max-width:250px;max-height:350px;"></div>' +
+            '<p id="coverScanStatus" style="font-size:0.9em;">A ler texto da capa...</p>' +
+            '<div id="coverScanProgress" style="width:80%;max-width:300px;height:6px;background:rgba(255,255,255,0.2);border-radius:6px;margin:15px auto;overflow:hidden;">' +
+                '<div id="coverScanProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;"></div>' +
+            '</div>' +
+        '</div>';
+}
+
+async function searchFromCover() {
+    var title = document.getElementById('coverEditTitle').value.trim();
+    var author = document.getElementById('coverEditAuthor').value.trim();
+    if (!title) { showToast('Indica um titulo para pesquisar.', 'warning'); return; }
+
+    // Construir query + fazer pesquisas agregadas (OL + Google Books em paralelo)
+    var queryBase = title + (author ? ' ' + author : '');
+
+    // Guardar UI actual e mostrar loading
+    var overlay = document.getElementById('coverScanOverlay');
+    var searchBtn = overlay.querySelector('button[onclick="searchFromCover()"]');
+    if (searchBtn) { searchBtn.disabled = true; searchBtn.textContent = 'A pesquisar...'; }
+
+    try {
+        // Estrategia: varias queries + agregacao
+        var queries = [
+            queryBase,
+            title,
+            author ? title + ' ' + author.split(' ').slice(-1)[0] : null
+        ].filter(Boolean);
+
+        var allResults = [];
+        var seenKeys = new Set();
+
+        for (var qi = 0; qi < queries.length && allResults.length < 10; qi++) {
+            var q = queries[qi];
+            var pair = await Promise.allSettled([
+                fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&language=por&limit=6').then(function(r){return r.json();}),
+                fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=6&orderBy=relevance').then(function(r){return r.json();})
+            ]);
+
+            if (pair[0].status === 'fulfilled' && pair[0].value.docs) {
+                pair[0].value.docs.forEach(function(doc) {
+                    var key = 'ol:' + (doc.key || doc.title);
+                    if (!seenKeys.has(key)) {
+                        seenKeys.add(key);
+                        allResults.push({ source: 'ol', doc: doc, _score: scoreMatch(doc.title, doc.author_name, title, author) });
+                    }
+                });
+            }
+            if (pair[1].status === 'fulfilled' && pair[1].value.items) {
+                pair[1].value.items.forEach(function(item) {
+                    var v = item.volumeInfo;
+                    var key = 'gb:' + (v.title || '') + '|' + ((v.authors||[]).join(','));
+                    if (!seenKeys.has(key)) {
+                        seenKeys.add(key);
+                        allResults.push({ source: 'gb', item: item, _score: scoreMatch(v.title, v.authors, title, author) });
+                    }
+                });
+            }
+        }
+
+        // Fallback sem lingua PT se estiver vazio
+        if (allResults.length === 0) {
+            try {
+                var fb = await fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(queryBase) + '&limit=6').then(function(r){return r.json();});
+                if (fb.docs) fb.docs.forEach(function(doc) {
+                    allResults.push({ source: 'ol', doc: doc, _score: scoreMatch(doc.title, doc.author_name, title, author) });
+                });
+            } catch(e) {}
+        }
+
+        if (allResults.length === 0) {
+            showToast('Nenhum livro encontrado. Tenta pesquisar manualmente.', 'warning');
+            return;
+        }
+
+        // Ordenar por score de relevancia
+        allResults.sort(function(a, b) { return b._score - a._score; });
+
+        // Fechar overlay
+        closeCoverScan();
+
+        // Mostrar resultados na barra de pesquisa rapida
+        document.getElementById('apiQuery').value = queryBase.substring(0, 80);
+        var rd = document.getElementById('apiResults');
+        rd.classList.add('visible');
+        rd.innerHTML = '';
+
+        allResults.slice(0, 12).forEach(function(r) {
+            if (r.source === 'ol') rd.appendChild(buildOLResultItem(r.doc));
+            else rd.appendChild(buildGBResultItem(r.item));
+        });
+
+        showToast('Encontrados ' + allResults.length + ' resultados. Escolhe o correcto.', 'success');
+
+    } catch(e) {
+        console.error('Erro pesquisa cover:', e);
+        showToast('Erro na pesquisa.', 'error');
+    }
+}
+
+// Pontua quao bem um resultado corresponde ao titulo/autor detectado
+function scoreMatch(resultTitle, resultAuthor, queryTitle, queryAuthor) {
+    var rt = (resultTitle || '').toLowerCase();
+    var ra = Array.isArray(resultAuthor) ? resultAuthor.join(' ').toLowerCase() : (resultAuthor || '').toLowerCase();
+    var qt = queryTitle.toLowerCase();
+    var qa = queryAuthor.toLowerCase();
+    var score = 0;
+
+    // Titulo: palavras comuns / palavras no query
+    var qWords = qt.split(/\s+/).filter(function(w) { return w.length >= 3; });
+    var matches = 0;
+    qWords.forEach(function(w) { if (rt.indexOf(w) >= 0) matches++; });
+    if (qWords.length > 0) score += (matches / qWords.length) * 100;
+
+    // Bonus se o titulo estiver inteiro contido
+    if (qt && rt.indexOf(qt) >= 0) score += 50;
+    if (rt === qt) score += 50;
+
+    // Autor: se fornecido
+    if (qa) {
+        var aWords = qa.split(/\s+/).filter(function(w) { return w.length >= 3; });
+        var aMatches = 0;
+        aWords.forEach(function(w) { if (ra.indexOf(w) >= 0) aMatches++; });
+        if (aWords.length > 0) score += (aMatches / aWords.length) * 50;
+    }
+
+    return score;
+}
+
+function buildOLResultItem(doc) {
+    var coverId = doc.cover_i;
+    var thumb = coverId ? 'https://covers.openlibrary.org/b/id/' + coverId + '-S.jpg' : '';
+    var author = doc.author_name ? doc.author_name.slice(0,2).join(', ') : 'Autor desconhecido';
+    var year = doc.first_publish_year || '';
+
+    var el = document.createElement('div');
+    el.className = 'api-result-item';
+    if (thumb) {
+        var img = document.createElement('img');
+        img.src = thumb; img.alt = '';
+        img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+        el.appendChild(img);
+    } else {
+        var nt = document.createElement('div');
+        nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
+        el.appendChild(nt);
+    }
+    var info = document.createElement('div');
+    info.className = 'api-result-info';
+    info.innerHTML = '<div class="r-title">' + esc(doc.title || '') + '</div>' +
+        '<div class="r-author">' + esc(author) + '</div>' +
+        (year ? '<div class="r-year">' + year + ' · PT</div>' : '<div class="r-year">PT</div>');
+    el.appendChild(info);
+    el.addEventListener('click', function() { selectOLResult(doc); });
+    return el;
+}
+
+function buildGBResultItem(item) {
+    var v = item.volumeInfo;
+    var thumb = (v.imageLinks && v.imageLinks.smallThumbnail) ? fixUrl(v.imageLinks.smallThumbnail) : '';
+    var author = v.authors ? v.authors.join(', ') : 'Autor desconhecido';
+    var lang = (v.language || '').toUpperCase();
+    var year = v.publishedDate ? v.publishedDate.substring(0,4) : '';
+    var yearLang = year + (lang ? (year ? ' · ' : '') + lang : '');
+
+    var el = document.createElement('div');
+    el.className = 'api-result-item';
+    if (thumb) {
+        var img = document.createElement('img');
+        img.src = thumb; img.alt = '';
+        img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+        el.appendChild(img);
+    } else {
+        var nt = document.createElement('div');
+        nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
+        el.appendChild(nt);
+    }
+    var info = document.createElement('div');
+    info.className = 'api-result-info';
+    info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
+        '<div class="r-author">' + esc(author) + '</div>' +
+        (yearLang ? '<div class="r-year">' + esc(yearLang) + '</div>' : '');
+    el.appendChild(info);
+    el.addEventListener('click', function() { selectGoogleBook(item); });
+    return el;
 }
 
 // ============ BARCODE SCANNER ============
