@@ -623,7 +623,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 8, em 15.04.2026</span>
+                <span class="header-version">Versão 9, em 15.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -1944,43 +1944,234 @@ async function searchBooks() {
 }
 
 // ---- ISBN ----
+// ============ ISBN UTILITIES ============
+function normalizeISBN(s) {
+    if (!s) return '';
+    return s.replace(/[^0-9Xx]/g, '').toUpperCase();
+}
+
+function isValidISBN10(isbn) {
+    if (!isbn || isbn.length !== 10) return false;
+    var sum = 0;
+    for (var i = 0; i < 9; i++) {
+        var c = isbn.charCodeAt(i) - 48;
+        if (c < 0 || c > 9) return false;
+        sum += c * (10 - i);
+    }
+    var last = isbn[9];
+    var check = last === 'X' ? 10 : (last.charCodeAt(0) - 48);
+    if (check < 0 || check > 10) return false;
+    sum += check;
+    return sum % 11 === 0;
+}
+
+function isValidISBN13(isbn) {
+    if (!isbn || isbn.length !== 13) return false;
+    var sum = 0;
+    for (var i = 0; i < 13; i++) {
+        var c = isbn.charCodeAt(i) - 48;
+        if (c < 0 || c > 9) return false;
+        sum += c * (i % 2 === 0 ? 1 : 3);
+    }
+    return sum % 10 === 0;
+}
+
+function isValidISBN(isbn) {
+    isbn = normalizeISBN(isbn);
+    return isValidISBN10(isbn) || isValidISBN13(isbn);
+}
+
+// Converter ISBN-10 para ISBN-13 (prefixo 978 + novo check digit)
+function isbn10to13(isbn10) {
+    if (!isbn10 || isbn10.length !== 10) return '';
+    var prefix = '978' + isbn10.substring(0, 9);
+    var sum = 0;
+    for (var i = 0; i < 12; i++) {
+        sum += (prefix.charCodeAt(i) - 48) * (i % 2 === 0 ? 1 : 3);
+    }
+    var check = (10 - (sum % 10)) % 10;
+    return prefix + check;
+}
+
+// Converter ISBN-13 para ISBN-10 (so funciona se comeca com 978)
+function isbn13to10(isbn13) {
+    if (!isbn13 || isbn13.length !== 13 || !isbn13.startsWith('978')) return '';
+    var body = isbn13.substring(3, 12);
+    var sum = 0;
+    for (var i = 0; i < 9; i++) {
+        sum += (body.charCodeAt(i) - 48) * (10 - i);
+    }
+    var check = (11 - (sum % 11)) % 11;
+    return body + (check === 10 ? 'X' : check);
+}
+
+// Gerar variantes: original + ISBN-10 + ISBN-13 se aplicavel
+function isbnVariants(isbn) {
+    isbn = normalizeISBN(isbn);
+    var variants = [isbn];
+    if (isbn.length === 10 && isValidISBN10(isbn)) {
+        var v13 = isbn10to13(isbn);
+        if (v13) variants.push(v13);
+    } else if (isbn.length === 13 && isValidISBN13(isbn)) {
+        var v10 = isbn13to10(isbn);
+        if (v10) variants.push(v10);
+    }
+    return variants;
+}
+
 async function searchByISBN(isbn, rd) {
-    // Tentar 3 fontes em paralelo
-    var results = await Promise.allSettled([
-        fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + isbn + '&format=json&jscmd=data').then(function(r){return r.json();}),
-        fetch('https://openlibrary.org/search.json?isbn=' + isbn + '&limit=1').then(function(r){return r.json();}),
-        fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn + '&maxResults=1').then(function(r){return r.json();})
-    ]);
+    var normalized = normalizeISBN(isbn);
 
-    // 1) Open Library bibkeys API
-    if (results[0].status === 'fulfilled') {
-        var olData = results[0].value;
-        var olKey = 'ISBN:' + isbn;
-        if (olData[olKey]) {
-            await fillFromOLBibkey(olData[olKey], isbn, rd);
-            return;
+    // Validar checksum primeiro
+    if (!isValidISBN(normalized)) {
+        rd.innerHTML =
+            '<div class="api-loading" style="color:var(--warning);">ISBN invalido (checksum nao confere).<br>' +
+            '<span style="font-size:0.8em;">Lido: ' + esc(normalized) + '</span></div>' +
+            '<div style="padding:10px;text-align:center;">' +
+                '<input type="text" id="isbnManual" value="' + esc(normalized) + '" placeholder="Corrige o ISBN" style="width:100%;padding:10px;margin-bottom:8px;">' +
+                '<button class="btn btn-accent btn-sm" onclick="retryISBN()">Tentar mesmo assim</button>' +
+            '</div>';
+        return;
+    }
+
+    // Gerar variantes (ISBN-10 e ISBN-13 se aplicavel)
+    var variants = isbnVariants(normalized);
+
+    rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A procurar ISBN ' + esc(normalized) + '...</div>';
+
+    // Tentar todas as variantes em todas as APIs simultaneamente
+    var promises = [];
+    variants.forEach(function(v) {
+        promises.push({
+            type: 'ol-bibkey', isbn: v,
+            p: fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + v + '&format=json&jscmd=data').then(function(r){return r.json();})
+        });
+        promises.push({
+            type: 'ol-search', isbn: v,
+            p: fetch('https://openlibrary.org/search.json?isbn=' + v + '&limit=3').then(function(r){return r.json();})
+        });
+        promises.push({
+            type: 'gb', isbn: v,
+            p: fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + v + '&maxResults=3').then(function(r){return r.json();})
+        });
+        promises.push({
+            type: 'ol-isbn', isbn: v,
+            p: fetch('https://openlibrary.org/isbn/' + v + '.json').then(function(r){return r.ok ? r.json() : null;}).catch(function(){return null;})
+        });
+    });
+
+    var settled = await Promise.allSettled(promises.map(function(o) { return o.p; }));
+
+    // Colectar todos os resultados encontrados
+    var found = [];
+    for (var i = 0; i < settled.length; i++) {
+        if (settled[i].status !== 'fulfilled') continue;
+        var info = promises[i];
+        var data = settled[i].value;
+        if (!data) continue;
+
+        if (info.type === 'ol-bibkey') {
+            var key = 'ISBN:' + info.isbn;
+            if (data[key]) found.push({ type: 'ol-bibkey', data: data[key], isbn: info.isbn });
+        } else if (info.type === 'ol-search') {
+            if (data.docs && data.docs.length > 0) {
+                data.docs.forEach(function(doc) { found.push({ type: 'ol-search', data: doc, isbn: info.isbn }); });
+            }
+        } else if (info.type === 'gb') {
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(function(item) { found.push({ type: 'gb', data: item, isbn: info.isbn }); });
+            }
+        } else if (info.type === 'ol-isbn') {
+            if (data.title) found.push({ type: 'ol-isbn', data: data, isbn: info.isbn });
         }
     }
 
-    // 2) Open Library search API
-    if (results[1].status === 'fulfilled') {
-        var searchData = results[1].value;
-        if (searchData.docs && searchData.docs.length > 0) {
-            await fillFromOLSearch(searchData.docs[0], isbn, rd);
-            return;
-        }
+    if (found.length === 0) {
+        rd.innerHTML =
+            '<div class="api-loading" style="color:var(--warning);">ISBN ' + esc(normalized) + ' nao encontrado.<br>' +
+            '<span style="font-size:0.8em;">Experimenta pesquisar pelo titulo do livro.</span></div>' +
+            '<div style="padding:10px;text-align:center;">' +
+                '<input type="text" id="isbnManual" value="' + esc(normalized) + '" placeholder="Corrige o ISBN ou usa titulo" style="width:100%;padding:10px;margin-bottom:8px;">' +
+                '<button class="btn btn-accent btn-sm" onclick="retryISBN()">Tentar novamente</button>' +
+            '</div>';
+        return;
     }
 
-    // 3) Google Books
-    if (results[2].status === 'fulfilled') {
-        var gbData = results[2].value;
-        if (gbData.items && gbData.items.length > 0) {
-            await selectGoogleBook(gbData.items[0]);
-            return;
-        }
+    // Se apenas um resultado unico, preencher directamente
+    var bestResult = found[0];
+    // Preferir ol-bibkey (tem mais dados) > gb > ol-search > ol-isbn
+    var priority = { 'ol-bibkey': 4, 'gb': 3, 'ol-search': 2, 'ol-isbn': 1 };
+    found.sort(function(a, b) { return (priority[b.type] || 0) - (priority[a.type] || 0); });
+    bestResult = found[0];
+
+    if (bestResult.type === 'ol-bibkey') {
+        await fillFromOLBibkey(bestResult.data, bestResult.isbn, rd);
+    } else if (bestResult.type === 'gb') {
+        await selectGoogleBook(bestResult.data);
+    } else if (bestResult.type === 'ol-search') {
+        await fillFromOLSearch(bestResult.data, bestResult.isbn, rd);
+    } else if (bestResult.type === 'ol-isbn') {
+        await fillFromOLIsbnJson(bestResult.data, bestResult.isbn, rd);
+    }
+}
+
+// Preencher a partir do endpoint /isbn/{isbn}.json (tem mais dados)
+async function fillFromOLIsbnJson(data, isbn, rd) {
+    var title = data.title || '';
+    var subtitle = data.subtitle || '';
+    var publishers = (data.publishers || []).join(', ');
+    var year = data.publish_date || '';
+    var pages = data.number_of_pages || '';
+    var covers = data.covers || [];
+    var coverUrl = covers.length > 0 ? 'https://covers.openlibrary.org/b/id/' + covers[0] + '-L.jpg' : '';
+
+    // Autor: pode precisar de fetch adicional
+    var authors = '';
+    if (data.authors && data.authors.length > 0) {
+        try {
+            var authorPromises = data.authors.slice(0, 3).map(function(a) {
+                return fetch('https://openlibrary.org' + a.key + '.json').then(function(r){return r.json();}).catch(function(){return null;});
+            });
+            var authorData = await Promise.all(authorPromises);
+            authors = authorData.filter(Boolean).map(function(a) { return a.name || ''; }).filter(Boolean).join(', ');
+        } catch(e) {}
     }
 
-    rd.innerHTML = '<div class="api-loading">ISBN nao encontrado em nenhuma base de dados. Tenta pesquisar pelo titulo.</div>';
+    // Descricao: fetch work
+    var summary = '';
+    if (data.works && data.works.length > 0) {
+        try {
+            var w = await fetch('https://openlibrary.org' + data.works[0].key + '.json').then(function(r){return r.json();});
+            if (w.description) {
+                summary = typeof w.description === 'string' ? w.description : (w.description.value || '');
+            }
+        } catch(e) {}
+    }
+    if (!summary || !looksPortuguese(summary)) {
+        summary = await fetchPTSummary(title, authors, summary);
+    }
+
+    fillForm({
+        title: title, subtitle: subtitle,
+        author: authors, cover: fixUrl(coverUrl),
+        summary: stripHtml(summary), genre: 'Geral',
+        pages: pages,
+        year: year ? year.replace(/.*(\d{4}).*/, '$1') : '',
+        publisher: publishers, publisherMain: publishers,
+        isbn: isbn, language: 'Portugues'
+    });
+    rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Livro encontrado por ISBN! Ajusta e guarda.</div>';
+    setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
+}
+
+// Re-tentar com ISBN editado manualmente
+function retryISBN() {
+    var manual = document.getElementById('isbnManual');
+    if (!manual) return;
+    var val = manual.value.trim();
+    if (!val) return;
+    document.getElementById('apiQuery').value = val;
+    searchBooks();
 }
 
 async function fillFromOLBibkey(book, isbn, rd) {
@@ -3032,45 +3223,112 @@ async function openScanner() {
         var scanWidth = Math.min(window.innerWidth - 40, 500);
         var boxWidth = Math.min(280, scanWidth - 40);
 
+        // Detectar se BarcodeDetector nativo esta disponivel (iOS 17+, Chrome, Edge)
+        // E muito mais rapido e preciso que html5-qrcode em JS
+        var useNative = false;
+        try {
+            if ('BarcodeDetector' in window) {
+                var formats = await window.BarcodeDetector.getSupportedFormats();
+                if (formats.indexOf('ean_13') >= 0) useNative = true;
+            }
+        } catch(e) { useNative = false; }
+
         await html5QrScanner.start(
             cameraId,
             {
-                fps: 10,
-                qrbox: { width: boxWidth, height: Math.round(boxWidth * 0.4) },
-                aspectRatio: 1.0,
+                fps: 15,
+                qrbox: { width: boxWidth, height: Math.round(boxWidth * 0.45) },
+                aspectRatio: 1.3,
+                disableFlip: false,
+                useBarCodeDetectorIfSupported: useNative,
+                experimentalFeatures: { useBarCodeDetectorIfSupported: useNative },
                 formatsToSupport: [
                     Html5QrcodeSupportedFormats.EAN_13,
                     Html5QrcodeSupportedFormats.EAN_8,
                     Html5QrcodeSupportedFormats.UPC_A,
                     Html5QrcodeSupportedFormats.UPC_E,
-                    Html5QrcodeSupportedFormats.CODE_128
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.CODE_39,
+                    Html5QrcodeSupportedFormats.ITF
                 ]
             },
             function onScanSuccess(decodedText) {
                 if (scannerProcessing) return;
                 scannerProcessing = true;
 
-                var isbn = decodedText.replace(/[^0-9X]/gi, '');
-                resultDiv.innerHTML = '<div class="found">Codigo encontrado: ' + isbn + '</div><p>A procurar livro...</p>';
+                var isbn = normalizeISBN(decodedText);
 
+                // Vibrar (feedback tactil)
                 if (navigator.vibrate) navigator.vibrate(200);
 
-                setTimeout(function() {
-                    closeScanner();
-                    document.getElementById('apiQuery').value = isbn;
-                    searchBooks();
-                }, 800);
+                // Mostrar UI de confirmacao do ISBN lido
+                showISBNConfirmation(isbn);
             },
             function onScanFailure() {}
         );
 
-        resultDiv.innerHTML = '<p style="color:white;font-size:0.85em;">Aponta para o codigo de barras do livro</p>';
+        resultDiv.innerHTML = '<p style="color:white;font-size:0.85em;">📱 Aponta para o codigo de barras do livro' +
+            (useNative ? ' <span style="opacity:0.6;font-size:0.85em;">(scanner rapido)</span>' : '') + '</p>';
 
     } catch(err) {
         console.error('Erro scanner:', err);
         var errMsg = (err && err.message) ? err.message : String(err);
         resultDiv.innerHTML = '<p style="color:var(--danger);">Erro ao iniciar scanner.</p>' +
             '<p style="color:white;font-size:0.8em;margin-top:8px;">' + errMsg + '</p>';
+    }
+}
+
+// Mostrar ISBN detectado e permitir confirmar ou corrigir antes de pesquisar
+async function showISBNConfirmation(isbn) {
+    // Parar scanner temporariamente (nao fechar para poder re-scan)
+    if (html5QrScanner) {
+        try { await html5QrScanner.pause(true); } catch(e) {}
+    }
+
+    var resultDiv = document.getElementById('scannerResult');
+    var isValid = isValidISBN(isbn);
+    var validColor = isValid ? 'var(--success)' : 'var(--warning)';
+    var validText = isValid ? '✓ ISBN valido' : '⚠ Checksum nao confere (pode ter erro de leitura)';
+
+    resultDiv.innerHTML =
+        '<div style="background:rgba(255,255,255,0.1);border-radius:12px;padding:15px;max-width:400px;margin:0 auto;">' +
+            '<div class="found" style="font-size:1.2em;margin-bottom:4px;">📷 Codigo detectado</div>' +
+            '<input type="text" id="scannerIsbnInput" value="' + esc(isbn) + '" style="width:100%;padding:12px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:1.1em;font-family:monospace;text-align:center;font-weight:700;letter-spacing:2px;margin:8px 0;">' +
+            '<p style="color:' + validColor + ';font-size:0.82em;margin-bottom:10px;">' + validText + '</p>' +
+            '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+                '<button onclick="confirmISBNScan()" style="background:var(--accent);color:#1a1a2e;border:none;padding:10px 20px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;">🔍 Pesquisar livro</button>' +
+                '<button onclick="resumeScanner()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:10px 16px;border-radius:8px;cursor:pointer;font-family:inherit;">🔄 Scan novamente</button>' +
+            '</div>' +
+        '</div>';
+
+    // Auto-focus para editar se checksum falhou
+    if (!isValid) {
+        setTimeout(function() {
+            var inp = document.getElementById('scannerIsbnInput');
+            if (inp) inp.focus();
+        }, 100);
+    }
+}
+
+async function confirmISBNScan() {
+    var input = document.getElementById('scannerIsbnInput');
+    if (!input) return;
+    var isbn = normalizeISBN(input.value);
+    if (!isbn || isbn.length < 10) {
+        showToast('ISBN demasiado curto.', 'warning');
+        return;
+    }
+    await closeScanner();
+    document.getElementById('apiQuery').value = isbn;
+    searchBooks();
+}
+
+async function resumeScanner() {
+    scannerProcessing = false;
+    var resultDiv = document.getElementById('scannerResult');
+    resultDiv.innerHTML = '<p style="color:white;font-size:0.85em;">📱 Aponta para o codigo de barras do livro</p>';
+    if (html5QrScanner) {
+        try { await html5QrScanner.resume(); } catch(e) {}
     }
 }
 
