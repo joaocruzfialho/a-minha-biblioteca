@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#1a1a2e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="A Minha Biblioteca">
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -55,6 +56,10 @@
             --space-6: 24px;
             --space-8: 32px;
             --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --z-header: 100;
+            --z-modal: 300;
+            --z-fab: 150;
+            --z-toast: 500;
         }
         [data-theme="dark"] {
             --primary: #c9a227;
@@ -86,6 +91,7 @@
         [data-theme="dark"] .tab.active { background: var(--primary); color: #1a1a2e; border-color: var(--primary); }
         [data-theme="dark"] .btn-outline { border-color: var(--border); color: var(--text); }
         [data-theme="dark"] .stat-card { background: #16213e; }
+        [data-theme="dark"] input::placeholder, [data-theme="dark"] textarea::placeholder { color: var(--text-muted); }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
@@ -113,6 +119,8 @@
         ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid var(--bg); }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
         [data-theme="dark"] ::-webkit-scrollbar-thumb { background: var(--border-strong); border-color: var(--bg); }
+        /* Firefox scrollbar */
+        * { scrollbar-width: thin; scrollbar-color: var(--accent) var(--border); }
 
         /* Selection */
         ::selection { background: var(--accent); color: #fff; }
@@ -120,7 +128,7 @@
         /* ===== HEADER ===== */
         .header {
             background: linear-gradient(135deg, #1a1a2e 0%, #2d2148 50%, #16213e 100%);
-            color: white; padding: 14px 20px; position: sticky; top: 0; z-index: 100;
+            color: white; padding: 14px 20px; position: sticky; top: 0; z-index: var(--z-header);
             box-shadow: var(--shadow-md);
             border-bottom: 1px solid rgba(201, 162, 39, 0.2);
             position: relative;
@@ -250,7 +258,7 @@
         .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
 
         /* ===== FAB ===== */
-        .fab { position: fixed; bottom: 80px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #333; border: none; font-size: 26px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.25); z-index: 99; transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
+        .fab { position: fixed; bottom: 80px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #333; border: none; font-size: 26px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.25); z-index: var(--z-fab); transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
         .fab:hover { transform: scale(1.1); }
 
         /* ===== CONTROLS ===== */
@@ -284,6 +292,8 @@
         .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
         .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes cardNewIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+        .card-new { animation: cardNewIn 0.35s ease !important; }
         .list-view .card { flex-direction: row; }
         .list-view .card .card-cover { width: 110px; min-width: 110px; height: 160px; }
         .list-view .card .card-content { padding: 12px; }
@@ -322,11 +332,16 @@
         .card-actions { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
         .card-actions .btn { flex: 1; min-width: 0; }
 
+        /* ===== LOAN OVERDUE ===== */
+        .loan-overdue { border-left: 3px solid var(--danger) !important; }
+        /* ===== BADGE WARNING (batch scanner) ===== */
+        .badge-warning { color: var(--warning); font-size: 0.75em; }
+
         /* ===== SEARCH HIGHLIGHT ===== */
         mark { background: var(--accent); color: #333; padding: 0 2px; border-radius: 3px; }
 
         /* ===== MODALS ===== */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 15px; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: var(--z-modal); align-items: center; justify-content: center; padding: 15px; }
         .modal-overlay.visible { display: flex; }
         .modal { background: var(--card-bg); border-radius: var(--radius); padding: 25px; max-width: 550px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); animation: modalIn 0.3s ease; }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
@@ -347,7 +362,7 @@
         .cat-bar-count { font-size: 0.8em; color: var(--text-light); min-width: 25px; }
 
         /* ===== TOAST ===== */
-        .toast-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
+        .toast-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
         .toast {
             background: var(--card-elevated); color: var(--text);
             padding: 12px 16px; border-radius: var(--radius);
@@ -436,6 +451,7 @@
         .scanner-result .found { color: var(--accent); font-weight: 700; font-size: 1.1em; }
         .btn-scanner { background: linear-gradient(135deg, var(--accent), #e67e22); color: #333; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 0.9em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.3s; font-family: inherit; }
         .btn-scanner:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .btn-scanner:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
         /* ===== COMMAND PALETTE ===== */
         .cmd-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); z-index: 400; padding: 80px 20px 20px; justify-content: center; align-items: flex-start; }
@@ -612,6 +628,10 @@
             .bottom-nav { display: none !important; }
         }
         html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+            html { scroll-behavior: auto; }
+        }
     </style>
 </head>
 <body>
@@ -623,7 +643,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 11, em 18.04.2026</span>
+                <span class="header-version">Versão 12, em 18.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -718,7 +738,7 @@
         <div class="api-search">
             <label>Pesquisa rapida (nome do livro ou ISBN)</label>
             <div class="api-search-row">
-                <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}">
+                <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}" oninput="if(!this.value.trim()){var r=document.getElementById('apiResults');if(r){r.classList.remove('visible');r.innerHTML='';}}">
                 <button class="btn btn-accent" onclick="searchBooks()">Pesquisar</button>
                 <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 ISBN</button>
                 <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar capa ou verso do livro. O codigo de barras no verso e lido automaticamente." style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
@@ -755,8 +775,8 @@
         </div>
 
         <div class="form-group">
-            <label>Resumo <button type="button" class="btn-fetch-summary" onclick="fetchSummaryForForm()" title="Pesquisar resumo automaticamente pelo titulo/autor">Procurar resumo</button></label>
-            <textarea id="summary" placeholder="Descricao do livro... ou clica em 'Procurar resumo'"></textarea>
+            <label>Resumo <button type="button" class="btn-fetch-summary" onclick="fetchSummaryForForm()" title="Pesquisar resumo automaticamente pelo titulo/autor">Procurar resumo</button> <span id="summaryCount" style="font-weight:400;color:var(--text-muted);font-size:0.9em;">0/600</span></label>
+            <textarea id="summary" placeholder="Descricao do livro... ou clica em 'Procurar resumo'" maxlength="600" oninput="document.getElementById('summaryCount').textContent=this.value.length+'/600'"></textarea>
         </div>
 
         <div class="form-row-3">
@@ -770,13 +790,13 @@
             <div class="form-section-title" onclick="toggleSection(this)">Detalhes adicionais</div>
             <div class="form-section-content">
                 <div class="form-row-3">
-                    <div class="form-group"><label>Paginas</label><input type="number" id="pages" placeholder="300" min="0"></div>
-                    <div class="form-group"><label>Paginas lidas</label><input type="number" id="pagesRead" placeholder="0" min="0"></div>
-                    <div class="form-group"><label>Ano</label><input type="number" id="year" placeholder="2024" min="0" max="2030"></div>
+                    <div class="form-group"><label>Paginas</label><input type="number" id="pages" placeholder="Ex: 320" min="0" spellcheck="false" inputmode="numeric"></div>
+                    <div class="form-group"><label>Paginas lidas</label><input type="number" id="pagesRead" placeholder="0" min="0" spellcheck="false" inputmode="numeric"></div>
+                    <div class="form-group"><label>Ano</label><input type="number" id="year" placeholder="Ex: 2024" min="1000" max="2030" spellcheck="false" inputmode="numeric"></div>
                 </div>
                 <div class="form-row-3">
                     <div class="form-group"><label>Editora</label><input type="text" id="publisher" placeholder="Ex: Porto Editora"></div>
-                    <div class="form-group"><label>ISBN</label><input type="text" id="isbn" placeholder="978..."></div>
+                    <div class="form-group"><label>ISBN <button type="button" onclick="var v=document.getElementById('isbn').value.trim();if(v){navigator.clipboard.writeText(v).then(function(){showToast('ISBN copiado!','success');});}" style="background:none;border:none;cursor:pointer;font-size:0.85em;color:var(--accent);" title="Copiar ISBN">📋</button></label><input type="text" id="isbn" placeholder="Ex: 9789722067690" pattern="[0-9X]{10,13}" autocomplete="isbn" spellcheck="false" inputmode="numeric"></div>
                     <div class="form-group"><label>Idioma</label><input type="text" id="language" placeholder="Portugues" list="langList"><datalist id="langList"><option value="Portugues"><option value="Ingles"><option value="Frances"><option value="Espanhol"><option value="Alemao"></datalist></div>
                 </div>
                 <div class="form-row">
@@ -786,10 +806,10 @@
                 <div class="form-row-3">
                     <div class="form-group"><label>Condicao</label><select id="condition"><option value="">--</option><option value="novo">Novo</option><option value="otimo">Otimo</option><option value="bom">Bom</option><option value="razoavel">Razoavel</option><option value="mau">Mau</option></select></div>
                     <div class="form-group"><label>Preco (EUR)</label><input type="number" id="price" placeholder="0.00" min="0" step="0.01"></div>
-                    <div class="form-group"><label>Data aquisicao</label><input type="date" id="acquiredDate"></div>
+                    <div class="form-group"><label>Data de aquisicao</label><input type="date" id="acquiredDate"></div>
                 </div>
                 <div class="form-group"><label>Etiquetas (separar por virgula)</label><input type="text" id="tags" placeholder="classico, portugues, favorito..."></div>
-                <div class="form-group"><label>Notas pessoais</label><textarea id="notes" placeholder="As tuas anotacoes sobre este livro..."></textarea></div>
+                <div class="form-group"><label>Notas pessoais <span id="notesCount" style="font-weight:400;color:var(--text-muted);">0/500</span></label><textarea id="notes" placeholder="As tuas anotacoes sobre este livro..." maxlength="500" oninput="document.getElementById('notesCount').textContent=this.value.length+'/500'"></textarea></div>
                 <div class="form-row">
                     <div class="form-group"><label>Inicio leitura</label><input type="date" id="readStart"></div>
                     <div class="form-group"><label>Fim leitura</label><input type="date" id="readEnd"></div>
@@ -805,7 +825,7 @@
 
     <!-- CONTROLS -->
     <section class="controls">
-        <div class="search-box"><input type="text" id="searchInput" placeholder="Pesquisar..." oninput="renderBooks()"></div>
+        <div class="search-box" style="position:relative;"><input type="text" id="searchInput" placeholder="Pesquisar por titulo, autor ou ISBN..." oninput="_debouncedRender()" id="searchInput"><button id="searchClearBtn" onclick="document.getElementById('searchInput').value='';renderBooks();this.style.display='none';" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1em;line-height:1;">×</button></div>
         <select id="genreFilter" onchange="renderBooks()"><option value="todos">Categorias</option></select>
         <select id="statusFilter" onchange="renderBooks()"><option value="todos">Estado</option><option value="unread">Nao lido</option><option value="reading">A ler</option><option value="read">Lido</option></select>
         <select id="sortBy" onchange="renderBooks()">
@@ -836,8 +856,8 @@
     </div>
 
     <!-- GRID -->
-    <div class="grid" id="libraryGrid"></div>
-    <div class="empty-state" id="emptyState" style="display:none;"><div class="icon">📚</div><p>Nenhum livro encontrado.</p></div>
+    <div class="grid" id="libraryGrid" aria-label="Lista de livros" role="list"></div>
+    <div class="empty-state" id="emptyState" style="display:none;"><div class="icon">📚</div><p id="emptyStateMsg">Nenhum livro encontrado.</p><div id="emptyStateClearBtn" style="display:none;margin-top:10px;"><button class="btn btn-outline btn-sm" onclick="clearAllFilters()">Limpar filtros</button></div></div>
 
     <!-- FOOTER -->
     <footer class="app-footer">
@@ -935,7 +955,7 @@
 </div>
 
 <!-- TOAST CONTAINER -->
-<div class="toast-container" id="toastContainer"></div>
+<div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
 
 <!-- CONFIRM DIALOG -->
 <div class="confirm-overlay" id="confirmOverlay">
@@ -951,8 +971,8 @@
 
 <!-- LOAN MODAL -->
 <div class="modal-overlay" id="loanModal">
-    <div class="modal">
-        <h3>Emprestar Livro</h3>
+    <div class="modal" role="dialog" aria-modal="true">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;">Emprestar Livro</h3><button onclick="closeModal('loanModal')" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:var(--text-light);" aria-label="Fechar">&times;</button></div>
         <input type="hidden" id="loanBookIndex">
         <div class="form-group"><label>A quem?</label><input type="text" id="loanName" placeholder="Nome da pessoa" list="loanHistory"><datalist id="loanHistory"></datalist></div>
         <div class="form-group"><label>Notas (opcional)</label><input type="text" id="loanNotes" placeholder="Ex: devolver em 2 semanas"></div>
@@ -965,12 +985,12 @@
 
 <!-- DETAIL MODAL -->
 <div class="modal-overlay" id="detailModal">
-    <div class="modal" id="detailContent"></div>
+    <div class="modal" id="detailContent" role="dialog" aria-modal="true"></div>
 </div>
 
 <!-- SHORTCUTS MODAL -->
 <div class="modal-overlay" id="shortcutsModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true">
         <h3>Atalhos de teclado</h3>
         <div class="shortcuts-list">
             <div class="shortcut-row"><span class="desc">Abrir pesquisa / comandos</span><div class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></div></div>
@@ -990,7 +1010,7 @@
 
 <!-- QR CODE MODAL -->
 <div class="modal-overlay" id="qrModal">
-    <div class="modal" id="qrContent"></div>
+    <div class="modal" id="qrContent" role="dialog" aria-modal="true"></div>
 </div>
 
 <script>
@@ -1052,7 +1072,8 @@ function fromDbRow(row) {
 }
 
 // ============ STATE ============
-let library = JSON.parse(localStorage.getItem('myLibrary')) || [];
+let _libParseError = false;
+let library = (function() { try { return JSON.parse(localStorage.getItem('myLibrary')) || []; } catch(e) { _libParseError = true; return []; } })();
 let currentTab = 'todos';
 let currentView = localStorage.getItem('libView') || 'grid';
 let readingGoal = parseInt(localStorage.getItem('readingGoal')) || 12;
@@ -1062,11 +1083,27 @@ let lastDeleted = null;
 let dbReady = false;
 const CATEGORY_COLORS = ['#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#1abc9c','#f39c12','#e84393','#00b894','#6c5ce7','#fd79a8','#00cec9'];
 
-function saveLocal() { localStorage.setItem('myLibrary', JSON.stringify(library)); }
+function saveLocal() {
+    try {
+        localStorage.setItem('myLibrary', JSON.stringify(library));
+    } catch(e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+            showToast('Aviso: Armazenamento local cheio! Exporta os dados para libertar espaco.', 'warning');
+        } else {
+            showToast('Erro ao guardar dados localmente.', 'error');
+        }
+    }
+}
 
 function save() {
     saveLocal();
-    if (dbReady) syncToDb();
+    if (dbReady) {
+        if (library.length > 500) {
+            showToast('Biblioteca grande (' + library.length + ' livros) — a sincronizacao pode demorar.', 'info');
+        }
+        syncToDb();
+    }
+    document.dispatchEvent(new CustomEvent('library:saved'));
 }
 
 // ============ SUPABASE SYNC ============
@@ -1187,6 +1224,16 @@ function resolveConfirm(val) {
     if (confirmResolver) { confirmResolver(val); confirmResolver = null; }
 }
 
+// Debounce for search
+var _searchDebounceTimer = null;
+function _debouncedRender() {
+    var inp = document.getElementById('searchInput');
+    var clearBtn = document.getElementById('searchClearBtn');
+    if (clearBtn) clearBtn.style.display = inp && inp.value ? '' : 'none';
+    clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(function() { renderBooks(); }, 250);
+}
+
 // ============ RENDER ============
 function renderBooks() {
     const grid = document.getElementById('libraryGrid');
@@ -1220,10 +1267,26 @@ function renderBooks() {
         case 'pages': books.sort((a,b) => (b.pages||0) - (a.pages||0)); break;
         case 'year': books.sort((a,b) => (b.year||0) - (a.year||0)); break;
         case 'price': books.sort((a,b) => (b.price||0) - (a.price||0)); break;
+        default: books.sort((a,b) => (b.addedAt||0) - (a.addedAt||0)); break;
     }
 
     grid.innerHTML = '';
-    document.getElementById('emptyState').style.display = books.length === 0 ? 'block' : 'none';
+    var hasFilters = query || genre !== 'todos' || status !== 'todos' || currentTab !== 'todos';
+    var emptyEl = document.getElementById('emptyState');
+    var emptyMsg = document.getElementById('emptyStateMsg');
+    var emptyClearBtn = document.getElementById('emptyStateClearBtn');
+    if (books.length === 0) {
+        emptyEl.style.display = 'block';
+        if (library.length > 0 && hasFilters) {
+            if (emptyMsg) emptyMsg.textContent = 'Nenhum livro encontra os filtros actuais.';
+            if (emptyClearBtn) emptyClearBtn.style.display = 'block';
+        } else {
+            if (emptyMsg) emptyMsg.textContent = library.length === 0 ? 'A tua biblioteca esta vazia. Adiciona o primeiro livro!' : 'Nenhum livro encontrado.';
+            if (emptyClearBtn) emptyClearBtn.style.display = 'none';
+        }
+    } else {
+        emptyEl.style.display = 'none';
+    }
     document.getElementById('resultCount').textContent = `${books.length} livro${books.length !== 1 ? 's' : ''}`;
 
     // Group by
@@ -1260,7 +1323,8 @@ function buildCard(book, query) {
     else if (rs === 'read') { statusText = 'LIDO'; statusClass = 'status-read'; }
 
     var progress = book.pages > 0 ? Math.min(100, Math.round(((book.pagesRead||0)/book.pages)*100)) : 0;
-    var coverHtml = book.cover ? '<img src="' + esc(book.cover) + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=no-cover>📖</div>\'">' : '<div class="no-cover">📖</div>';
+    var _noCovrInitials = (book.title || 'L').split(/\s+/).slice(0,2).map(function(w){return w[0]||'';}).join('').toUpperCase() || '📖';
+    var coverHtml = book.cover ? '<img src="' + esc(book.cover) + '" alt="" loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=no-cover style=\\\'display:flex;flex-direction:column;align-items:center;justify-content:center;\\\'><span style=\\\'font-size:2em;font-weight:800;color:rgba(255,255,255,0.8);font-family:var(--font-serif);\\\'>' + _noCovrInitials + '</span></div>\'">' : '<div class="no-cover" style="display:flex;flex-direction:column;align-items:center;justify-content:center;"><span style="font-size:2em;font-weight:800;color:rgba(255,255,255,0.8);font-family:var(--font-serif);">' + _noCovrInitials + '</span></div>';
     var catColor = getCategoryColor(book.genre);
 
     var title = esc(book.title);
@@ -1268,10 +1332,12 @@ function buildCard(book, query) {
     if (query) { title = highlightText(title, query); author = highlightText(author, query); }
 
     var daysLent = isLent && book.loanDate ? daysSince(book.loanDate) : 0;
-    var tags = (book.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) { return '<span class="tag">' + esc(t.trim()) + '</span>'; }).join('');
+    var tags = (book.tags || '').split(',').filter(function(t) { return t.trim(); }).map(function(t) { return '<span class="tag" style="cursor:pointer;" onclick="event.stopPropagation();searchByTag(\'' + esc(t.trim()).replace(/'/g,"&#39;") + '\')" title="Filtrar por esta etiqueta">' + esc(t.trim()) + '</span>'; }).join('');
 
     var card = document.createElement('div');
-    card.className = 'card' + (bulkSelected.has(idx) ? ' selected' : '');
+    var isOverdue = isLent && daysLent > 90;
+    var isNew = book.addedAt && (Date.now() - book.addedAt) < 5000;
+    card.className = 'card' + (bulkSelected.has(idx) ? ' selected' : '') + (isOverdue ? ' loan-overdue' : '') + (isNew ? ' card-new' : '');
     var checkboxHtml = '<div class="card-checkbox ' + (bulkSelected.has(idx) ? 'checked' : '') + '" onclick="toggleBulkSelect(' + idx + ', event)">' + (bulkSelected.has(idx) ? '✓' : '') + '</div>';
     card.innerHTML =
         checkboxHtml +
@@ -1285,19 +1351,20 @@ function buildCard(book, query) {
         '</div>' +
         '<div class="card-content">' +
             '<span class="card-genre" style="color:' + catColor + '">' + esc(book.genre || 'Geral') + '</span>' +
+            (book.condition ? '<span style="float:right;font-size:0.85em;" title="Condicao: ' + esc(book.condition) + '">' + ({novo:'⭐',otimo:'🟢',bom:'🟡',razoavel:'🟠',mau:'🔴'}[book.condition]||'') + '</span>' : '') +
             '<div class="card-title">' + title + '</div>' +
             (book.subtitle ? '<div style="font-size:0.8em;color:var(--text-light);margin-bottom:2px;font-style:italic;">' + esc(book.subtitle) + '</div>' : '') +
             '<div class="card-author">' + author + '</div>' +
             '<div class="rating-stars" onclick="event.stopPropagation()">' + renderStarsInteractive(book.rating||0, idx) + '</div>' +
             '<div class="card-meta">' +
                 (book.year ? '<span>📅 ' + book.year + '</span>' : '') +
-                (book.pages ? '<span>📄 ' + book.pages + 'p</span>' : '') +
+                (book.readingStatus === 'reading' && progress > 0 ? '<span title="Progresso de leitura">📖 ' + progress + '%</span>' : (book.pages && book.readingStatus !== 'reading' ? '<span>📄 ' + book.pages + 'p</span>' : '')) +
                 (book.publisherMain ? '<span>🏢 ' + esc(book.publisherMain) + '</span>' : '') +
                 (book.series ? '<span>📚 ' + esc(book.series) + '</span>' : '') +
             '</div>' +
             '<p class="card-summary">' + esc((book.summary||'').substring(0,90)) + ((book.summary||'').length > 90 ? '...' : '') + '</p>' +
             (tags ? '<div class="card-tags">' + tags + '</div>' : '') +
-            (isLent ? '<div class="loan-info"><strong>' + esc(book.lentTo) + '</strong> · ' + esc(book.loanDate||'') + ' ' + (daysLent > 30 ? '<span class="overdue">(' + daysLent + ' dias!)</span>' : '(' + daysLent + 'd)') + '</div>' : '') +
+            (isLent ? '<div class="loan-info">' + (daysLent > 90 ? '⚠️ ' : '') + '<strong>' + esc(book.lentTo) + '</strong> · ' + esc(book.loanDate||'') + ' ' + (daysLent > 30 ? '<span class="overdue">(' + daysLent + ' dias!)</span>' : '(' + daysLent + 'd)') + '</div>' : '') +
             '<div class="card-actions">' +
                 (isLent ? '<button class="btn btn-success btn-xs" onclick="returnBook(' + idx + ')">Devolvido</button>' : '<button class="btn btn-accent btn-xs" onclick="openLoanModal(' + idx + ')">Emprestar</button>') +
                 '<button class="btn btn-outline btn-xs" onclick="editBook(' + idx + ')" title="Editar">✏️</button>' +
@@ -1379,9 +1446,13 @@ function animateNumber(el, target, suffix) {
 
 function updateStats() {
     var t = library.length;
-    var l = library.filter(function(b) { return b.lentTo; }).length;
-    var r = library.filter(function(b) { return b.readingStatus === 'read'; }).length;
-    var val = library.reduce(function(s, b) { return s + (parseFloat(b.price) || 0); }, 0);
+    var counts = library.reduce(function(acc, b) {
+        if (b.lentTo) acc.l++;
+        if (b.readingStatus === 'read') acc.r++;
+        acc.val += parseFloat(b.price) || 0;
+        return acc;
+    }, { l: 0, r: 0, val: 0 });
+    var l = counts.l, r = counts.r, val = counts.val;
 
     animateNumber(document.getElementById('statTotal'), t);
     animateNumber(document.getElementById('statLent'), l);
@@ -1460,9 +1531,13 @@ function updateGoal() {
         var daysTotal = Math.ceil((endOfYear - startOfYear) / 86400000);
         var expectedByNow = Math.round((readingGoal / daysTotal) * daysPast);
         var diff = read - expectedByNow;
+        var remaining = readingGoal - read;
+        var daysLeft = Math.ceil((endOfYear - now) / 86400000);
+        var pagesPerDay = remaining > 0 && daysLeft > 0 ? Math.round((remaining * 250) / daysLeft) : 0;
+        var estHint = remaining > 0 && pagesPerDay > 0 ? ' <span title="Estimativa: ' + pagesPerDay + ' paginas/dia para atingir a meta (a 250p/livro)" style="cursor:help;opacity:0.7;">(~' + pagesPerDay + 'p/dia)</span>' : '';
         if (read >= readingGoal) paceEl.innerHTML = '🎉 Meta alcançada!';
-        else if (diff >= 0) paceEl.innerHTML = '✨ Em bom ritmo (+' + diff + ')';
-        else paceEl.innerHTML = '📖 ' + Math.abs(diff) + ' livro(s) atras do ritmo';
+        else if (diff >= 0) paceEl.innerHTML = '✨ Em bom ritmo (+' + diff + ')' + estHint;
+        else paceEl.innerHTML = '📖 ' + Math.abs(diff) + ' livro(s) atras do ritmo' + estHint;
     }
 
     renderContinueReading();
@@ -1523,13 +1598,17 @@ function renderRecommendations() {
 
 function editGoal() {
     const n = prompt('Meta de livros para este ano:', readingGoal);
-    if (n && parseInt(n) > 0) { readingGoal = parseInt(n); localStorage.setItem('readingGoal', readingGoal); updateGoal(); }
+    if (n === null) return;
+    const val = Math.floor(parseInt(n));
+    if (!isNaN(val) && val > 0) { readingGoal = val; localStorage.setItem('readingGoal', readingGoal); updateGoal(); }
+    else if (n !== '') { showToast('A meta tem de ser um numero inteiro maior que 0.', 'warning'); }
 }
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ============ CRUD ============
 const FIELDS = ['title','author','subtitle','publisherMain','cover','summary','genre','rating','readingStatus','pages','pagesRead','year','publisher','isbn','language','series','location','condition','price','acquiredDate','tags','notes','readStart','readEnd'];
+const DEFAULT_GENRE = 'Geral';
 
 function saveBook() {
     const title = document.getElementById('title').value.trim();
@@ -1547,11 +1626,22 @@ function saveBook() {
     FIELDS.forEach(f => {
         const el = document.getElementById(f);
         if (!el) return;
-        if (f === 'rating' || f === 'pages' || f === 'pagesRead' || f === 'year') data[f] = parseInt(el.value) || 0;
-        else if (f === 'price') data[f] = parseFloat(el.value) || 0;
+        if (f === 'rating' || f === 'pages' || f === 'pagesRead') data[f] = parseInt(el.value) || 0;
+        else if (f === 'year') {
+            var yv = parseInt(el.value) || 0;
+            var yCurr = new Date().getFullYear();
+            if (yv !== 0 && (yv < 1000 || yv > yCurr + 1)) { showToast('Ano de publicacao invalido (' + yv + '). Deve ser entre 1000 e ' + (yCurr+1) + '.', 'warning'); data[f] = 0; } else { data[f] = yv; }
+        }
+        else if (f === 'price') data[f] = Math.round(parseFloat(el.value) * 100) / 100 || 0;
         else data[f] = el.value.trim();
     });
-    data.genre = data.genre || 'Geral';
+    data.genre = data.genre || DEFAULT_GENRE;
+
+    // Auto-set reading dates and page count
+    var today = new Date().toISOString().split('T')[0];
+    if (data.readingStatus === 'read' && !data.readEnd) data.readEnd = today;
+    if (data.readingStatus === 'reading' && !data.readStart) data.readStart = today;
+    if (data.readingStatus === 'read' && data.pages > 0) data.pagesRead = data.pages;
 
     if (editIdx >= 0) {
         library[editIdx] = { ...library[editIdx], ...data };
@@ -1578,11 +1668,17 @@ function editBook(idx) {
 }
 
 async function deleteBook(idx) {
+    if (idx < 0 || idx >= library.length) return;
     const ok = await showConfirm('Apagar livro', `Apagar "${library[idx].title}"?`, 'Apagar');
     if (!ok) return;
     lastDeleted = { book: {...library[idx]}, index: idx };
     library.splice(idx, 1);
     save(); renderBooks();
+    // Restore focus to grid or first card
+    setTimeout(function(){
+        var firstCard = document.querySelector('#libraryGrid .card');
+        if (firstCard) firstCard.focus();
+    }, 100);
     showToast('Livro apagado.', '', `function(){ library.splice(${Math.min(idx, library.length)},0,JSON.parse(localStorage.getItem('_undo'))); save(); renderBooks(); }`, 'Desfazer');
     localStorage.setItem('_undo', JSON.stringify(lastDeleted.book));
 }
@@ -1597,7 +1693,14 @@ function clearForm() {
     updateRatingInput(0);
 }
 
-function cancelEdit() { clearForm(); document.getElementById('addBookForm').classList.remove('visible'); }
+function cancelEdit() {
+    var titleVal = document.getElementById('title').value.trim();
+    var editIdx = parseInt(document.getElementById('editIndex').value);
+    if (titleVal && editIdx < 0) {
+        if (!confirm('Tens dados nao guardados. Tens a certeza que queres sair?')) return;
+    }
+    clearForm(); document.getElementById('addBookForm').classList.remove('visible');
+}
 
 // ============ RATING INPUT ============
 function updateRatingInput(val) {
@@ -1641,7 +1744,8 @@ function confirmLoan() {
 async function returnBook(idx) {
     const ok = await showConfirm('Devolvido?', `Marcar "${library[idx].title}" como devolvido?`, 'Sim, devolvido');
     if (!ok) return;
-    if (library[idx].loanHistory && library[idx].loanHistory.length > 0) {
+    library[idx].loanHistory = library[idx].loanHistory || [];
+    if (library[idx].loanHistory.length > 0) {
         library[idx].loanHistory[library[idx].loanHistory.length-1].returned = new Date().toLocaleDateString('pt-PT');
     }
     library[idx].lentTo = ''; library[idx].loanDate = ''; library[idx].loanNotes = '';
@@ -1685,7 +1789,8 @@ function showDetail(idx) {
         ${history ? `<div style="margin-top:12px;"><strong style="font-size:0.85em;">Historico de emprestimos:</strong>${history}</div>` : ''}
         ${b.addedAt ? `<p style="font-size:0.75em;color:#bbb;margin-top:10px;">Adicionado em ${new Date(b.addedAt).toLocaleDateString('pt-PT')}</p>` : ''}
         <div class="form-row" style="margin-top:15px;">
-            <button class="btn btn-outline btn-sm" onclick="editBook(${idx});closeModal('detailModal')">Editar</button>
+            <button class="btn btn-outline btn-sm" onclick="editBook(${idx});closeModal('detailModal')">✏️ Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="closeModal('detailModal');deleteBook(${idx})">🗑️ Eliminar</button>
             <button class="btn btn-outline btn-sm" onclick="closeModal('detailModal')">Fechar</button>
         </div>`;
     openModal('detailModal');
@@ -1695,7 +1800,25 @@ function showDetail(idx) {
 function toggleForm() {
     const f = document.getElementById('addBookForm');
     if (f.classList.contains('visible')) cancelEdit();
-    else { clearForm(); f.classList.add('visible'); f.scrollIntoView({behavior:'smooth'}); setTimeout(()=>document.getElementById('apiQuery').focus(),100); }
+    else { clearForm(); f.classList.add('visible'); f.scrollIntoView({behavior:'smooth'}); setTimeout(()=>{ var tf = document.getElementById('title'); if(tf) tf.focus(); },150); }
+}
+
+function searchByTag(tag) {
+    var inp = document.getElementById('searchInput');
+    if (inp) { inp.value = tag; var clearBtn = document.getElementById('searchClearBtn'); if (clearBtn) clearBtn.style.display = ''; }
+    currentTab = 'todos';
+    renderBooks();
+    showToast('A mostrar livros com etiqueta: ' + tag, '');
+}
+
+function clearAllFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('genreFilter').value = 'todos';
+    document.getElementById('statusFilter').value = 'todos';
+    currentTab = 'todos';
+    var clearBtn = document.getElementById('searchClearBtn');
+    if (clearBtn) clearBtn.style.display = 'none';
+    renderBooks();
 }
 
 function setTab(el) {
@@ -1719,8 +1842,8 @@ function setView(v, btn) {
     document.getElementById('libraryGrid').classList.toggle('list-view', v === 'list');
 }
 
-function openModal(id) { document.getElementById(id).classList.add('visible'); }
-function closeModal(id) { document.getElementById(id).classList.remove('visible'); }
+function openModal(id) { if (id === 'detailModal') window._detailScrollY = window.scrollY; document.getElementById(id).classList.add('visible'); }
+function closeModal(id) { document.getElementById(id).classList.remove('visible'); if (id === 'detailModal' && window._detailScrollY !== undefined) { requestAnimationFrame(function(){ window.scrollTo(0, window._detailScrollY); }); } }
 
 document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('visible'); }));
 document.addEventListener('keydown', e => {
@@ -1857,10 +1980,13 @@ function shareLibrary() {
 
 // ============ EXPORT ============
 function exportJSON() {
-    const blob = new Blob([JSON.stringify(library, null, 2)], {type:'application/json'});
+    var sortedLib = library.slice().sort(function(a,b){ return (a.title||'').localeCompare(b.title||'','pt'); });
+    var exportObj = { exportDate: new Date().toISOString(), totalBooks: library.length, books: sortedLib };
+    const blob = new Blob([JSON.stringify(exportObj, null, 2)], {type:'application/json'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `biblioteca-${new Date().toISOString().split('T')[0]}.json`; a.click();
     showToast('JSON exportado!', 'success');
+    markBackup();
 }
 
 function exportCSV() {
@@ -1878,11 +2004,34 @@ function importLibrary(event) {
     const reader = new FileReader();
     reader.onload = e => {
         try {
-            const imported = JSON.parse(e.target.result);
-            if (!Array.isArray(imported)) throw new Error('Formato invalido');
+            var rawImport;
+            try { rawImport = JSON.parse(e.target.result); } catch(csvE) {
+                // CSV import: handle inline
+                var lines = e.target.result.replace(/^\uFEFF/,'').split('\n').filter(function(l){return l.trim();});
+                if (lines.length > 1) {
+                    var csvHeaders = lines[0].split(',').map(function(h){return h.replace(/^"|"$/g,'').trim().toLowerCase();});
+                    var csvBooks = lines.slice(1).map(function(line){
+                        var vals = line.match(/"[^"]*"|[^,]*/g)||[];
+                        var obj = {};
+                        csvHeaders.forEach(function(h,i){ obj[h] = (vals[i]||'').replace(/^"|"$/g,'').trim(); });
+                        return { title: obj['titulo']||obj['title']||'', author: obj['autor']||obj['author']||'', genre: obj['categoria']||obj['genre']||'', rating: parseInt(obj['nota']||obj['rating'])||0, readingStatus: obj['estado']||obj['readingstatus']||'unread' };
+                    }).filter(function(b){return b.title;});
+                    rawImport = csvBooks;
+                } else { throw new Error('CSV invalido'); }
+            }
+            const imported = Array.isArray(rawImport) ? rawImport : (rawImport.books && Array.isArray(rawImport.books) ? rawImport.books : null);
+            if (!imported) throw new Error('Formato invalido');
+            // Preview
+            var preview = imported.slice(0,3).map(function(b){return esc(b.title||'?');}).join(', ');
+            if (!confirm('Importar ' + imported.length + ' livros?\nPrimeiros: ' + preview)) { event.target.value = ''; return; }
             const existing = new Set(library.map(b => b.title.toLowerCase()));
+            const existingISBNs = new Set(library.map(b => normalizeISBN(b.isbn || '')).filter(Boolean));
             let added = 0;
-            imported.forEach(b => { if (!existing.has(b.title.toLowerCase())) { library.push(b); added++; } });
+            imported.forEach(b => {
+                var bIsbn = normalizeISBN(b.isbn || '');
+                if (bIsbn && existingISBNs.has(bIsbn)) return;
+                if (!existing.has((b.title||'').toLowerCase())) { library.push(b); added++; existing.add((b.title||'').toLowerCase()); if (bIsbn) existingISBNs.add(bIsbn); }
+            });
             save(); renderBooks();
             showToast(`${added} livros importados!`, 'success');
         } catch(err) { showToast('Erro: ' + err.message, 'error'); }
@@ -1907,11 +2056,11 @@ function handleCoverUpload(event) {
         img.onload = () => {
             const canvas = document.createElement('canvas');
             let w = img.width, h = img.height;
-            if (w > 400) { h = h*(400/w); w = 400; }
-            if (h > 600) { w = w*(600/h); h = 600; }
+            if (w > 300) { h = Math.round(h*(300/w)); w = 300; }
+            if (h > 400) { w = Math.round(w*(400/h)); h = 400; }
             canvas.width = w; canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            setCoverPreview(canvas.toDataURL('image/jpeg', 0.8));
+            setCoverPreview(canvas.toDataURL('image/jpeg', 0.85));
         };
         img.src = e.target.result;
     };
@@ -1950,12 +2099,17 @@ function removeCover() {
 
 function fixUrl(url) {
     if (!url) return '';
+    if (!url.startsWith('http') && !url.startsWith('/')) return '';
     return url.replace('http://', 'https://');
 }
 
 async function searchBooks() {
+    if (window._searchAbort) window._searchAbort.abort();
+    window._searchAbort = new AbortController();
     var q = document.getElementById('apiQuery').value.trim();
     if (!q) return;
+    var _sbBtn = document.querySelector('[onclick="searchBooks()"]');
+    if (_sbBtn) _sbBtn.disabled = true;
     var rd = document.getElementById('apiResults');
     rd.classList.add('visible');
     rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A pesquisar...</div>';
@@ -1969,8 +2123,13 @@ async function searchBooks() {
             await searchByTitle(q, rd);
         }
     } catch(e) {
-        console.error('Erro pesquisa:', e);
-        rd.innerHTML = '<div class="api-loading">Erro na pesquisa. Verifica a internet.</div>';
+        if (e && e.name !== 'AbortError') {
+            console.error('Erro pesquisa:', e);
+            rd.innerHTML = '<div class="api-loading">Erro na pesquisa. Verifica a internet.</div>';
+        }
+    } finally {
+        var _sbBtn2 = document.querySelector('[onclick="searchBooks()"]');
+        if (_sbBtn2) _sbBtn2.disabled = false;
     }
 }
 
@@ -2073,21 +2232,22 @@ async function searchByISBN(isbn, rd) {
     // Tentar todas as variantes em todas as APIs simultaneamente
     var promises = [];
     variants.forEach(function(v) {
+        var _isbnSig = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
         promises.push({
             type: 'ol-bibkey', isbn: v,
-            p: fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + v + '&format=json&jscmd=data').then(function(r){return r.json();})
+            p: fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + v + '&format=json&jscmd=data', { signal: _isbnSig }).then(function(r){return r.json();})
         });
         promises.push({
             type: 'ol-search', isbn: v,
-            p: fetch('https://openlibrary.org/search.json?isbn=' + v + '&limit=3').then(function(r){return r.json();})
+            p: fetch('https://openlibrary.org/search.json?isbn=' + v + '&limit=3', { signal: _isbnSig }).then(function(r){return r.json();})
         });
         promises.push({
             type: 'gb', isbn: v,
-            p: fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + v + '&maxResults=3').then(function(r){return r.json();})
+            p: fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + v + '&maxResults=3', { signal: _isbnSig }).then(function(r){return r.json();})
         });
         promises.push({
             type: 'ol-isbn', isbn: v,
-            p: fetch('https://openlibrary.org/isbn/' + v + '.json').then(function(r){return r.ok ? r.json() : null;}).catch(function(){return null;})
+            p: fetch('https://openlibrary.org/isbn/' + v + '.json', { signal: _isbnSig }).then(function(r){return r.ok ? r.json() : null;}).catch(function(){return null;})
         });
     });
 
@@ -2264,7 +2424,7 @@ async function searchByTitle(query, rd) {
     }
 
     if (olDocs.length === 0 && gbItems.length === 0) {
-        rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado.</div>';
+        rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado. Tenta pesquisar pelo ISBN do livro para resultados mais precisos.</div>';
         return;
     }
 
@@ -2293,7 +2453,8 @@ async function searchByTitle(query, rd) {
 
         var info = document.createElement('div');
         info.className = 'api-result-info';
-        info.innerHTML = '<div class="r-title">' + esc(doc.title || '') + '</div>' +
+        var _alreadyHaveOL = library.some(function(b){ return (b.title||'').toLowerCase() === (doc.title||'').toLowerCase(); });
+        info.innerHTML = '<div class="r-title">' + esc(doc.title || '') + (_alreadyHaveOL ? ' <span style="font-size:0.75em;color:var(--success);font-weight:700;">✓ Ja tens</span>' : '') + '</div>' +
             '<div class="r-author">' + esc(author) + '</div>' +
             (year ? '<div class="r-year">' + year + ' · PT</div>' : '<div class="r-year">PT</div>');
         el.appendChild(info);
@@ -2337,7 +2498,8 @@ async function searchByTitle(query, rd) {
 
         var info = document.createElement('div');
         info.className = 'api-result-info';
-        info.innerHTML = '<div class="r-title">' + esc(v.title || '') + '</div>' +
+        var _alreadyHaveGB = library.some(function(b){ return (b.title||'').toLowerCase() === (v.title||'').toLowerCase(); });
+        info.innerHTML = '<div class="r-title">' + esc(v.title || '') + (_alreadyHaveGB ? ' <span style="font-size:0.75em;color:var(--success);font-weight:700;">✓ Ja tens</span>' : '') + '</div>' +
             '<div class="r-author">' + esc(author) + '</div>' +
             (yearLang ? '<div class="r-year">' + esc(yearLang) + '</div>' : '');
         el.appendChild(info);
@@ -2427,7 +2589,8 @@ async function fetchOLDescription(workKey, title, author) {
     // 1) Tentar Open Library works endpoint
     if (workKey) {
         try {
-            var r = await fetch('https://openlibrary.org' + workKey + '.json');
+            var _olDescSig = AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;
+            var r = await fetch('https://openlibrary.org' + workKey + '.json', { signal: _olDescSig });
             var d = await r.json();
             var desc = d.description;
             if (desc) {
@@ -2447,7 +2610,8 @@ function looksPortuguese(t) {
 async function fetchPTSummary(title, author, fallback) {
     try {
         var query = title + (author ? ' ' + author : '');
-        var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=5');
+        var _ptSumSig = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+        var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=5', { signal: _ptSumSig });
         var d = await r.json();
         if (d.items) {
             for (var i = 0; i < d.items.length; i++) {
@@ -2531,9 +2695,21 @@ async function fetchSummaryForForm() {
 }
 
 function fillForm(d) {
-    Object.keys(d).forEach(k => { const el = document.getElementById(k); if (el && d[k]) el.value = d[k]; });
-    if (d.cover) setCoverPreview(d.cover);
+    Object.keys(d).forEach(k => {
+        const el = document.getElementById(k);
+        if (el && d[k] !== undefined && d[k] !== null) {
+            if (typeof d[k] === 'string') el.value = d[k].trim();
+            else el.value = d[k];
+        }
+    });
+    if (d.cover) {
+        var coverUrl = typeof d.cover === 'string' ? d.cover.replace(/^http:\/\//i, 'https://') : d.cover;
+        setCoverPreview(coverUrl);
+    }
     if (d.rating) updateRatingInput(parseInt(d.rating)||0);
+    // Limit summary to 600 chars
+    var sumEl = document.getElementById('summary');
+    if (sumEl && sumEl.value.length > 600) sumEl.value = sumEl.value.substring(0, 600);
 }
 
 // ============ ONBOARDING ============
@@ -2742,8 +2918,14 @@ function setSyncStatus(state, text) {
     txt.textContent = text;
 }
 
-window.addEventListener('online', function() { setSyncStatus('online', 'Online'); });
-window.addEventListener('offline', function() { setSyncStatus('offline', 'Offline'); });
+window.addEventListener('online', function() {
+    setSyncStatus('online', 'Online');
+    showToast('Ligacao restaurada — a sincronizar...', 'success');
+});
+window.addEventListener('offline', function() {
+    setSyncStatus('offline', 'Offline');
+    showToast('Modo offline — dados guardados localmente', 'warning');
+});
 
 // Atualizar sync status durante sincronizacao
 (function() {
@@ -2780,8 +2962,10 @@ window.addEventListener('offline', function() { setSyncStatus('offline', 'Offlin
                     await supabaseClient.from('books').update(r).eq('id', id);
                 }
                 if (toDelete.length > 0) await supabaseClient.from('books').delete().in('id', toDelete);
-                setSyncStatus('online', 'Sincronizado');
-                setTimeout(function() { setSyncStatus('online', 'Online'); }, 2000);
+                var now = new Date();
+                var hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+                setSyncStatus('online', 'Sync ' + hhmm);
+                setTimeout(function() { setSyncStatus('online', 'Online'); }, 5000);
             } catch(e) {
                 console.error('Sync error:', e);
                 setSyncStatus('offline', 'Erro sync');
@@ -3189,6 +3373,8 @@ async function searchFromCover() {
     } catch(e) {
         console.error('Erro pesquisa cover:', e);
         showToast('Erro na pesquisa.', 'error');
+        var _sb2 = document.getElementById('coverScanOverlay');
+        if (_sb2) { var _sbBtn3 = _sb2.querySelector('button[onclick="searchFromCover()"]'); if (_sbBtn3) { _sbBtn3.disabled = false; _sbBtn3.textContent = '🔍 Pesquisar'; } }
     }
 }
 
@@ -3478,8 +3664,15 @@ async function confirmISBNScan() {
     if (!input) return;
     var isbn = normalizeISBN(input.value);
     if (!isbn || isbn.length < 10) { showToast('ISBN demasiado curto.', 'warning'); return; }
+    // Check if book is already in library
+    var existing = library.find(function(b) { return normalizeISBN(b.isbn||'') === isbn; });
+    if (existing) {
+        showToast('Este livro ja esta na biblioteca: <strong>' + esc(existing.title) + '</strong>', 'warning');
+    }
     await closeScanner();
     document.getElementById('apiQuery').value = isbn;
+    var form = document.getElementById('addBookForm');
+    if (form) { form.scrollIntoView({ behavior: 'smooth' }); }
     searchBooks();
 }
 
@@ -3561,7 +3754,8 @@ var batch = {
     raf: null,
     html5qr: null,
     seen: new Set(),   // ISBNs ja adicionados a queue (dedup)
-    queue: []          // [{isbn, status, book}]
+    queue: [],         // [{isbn, status, book}]
+    startTime: 0       // timestamp when batch started
 };
 
 function _batchFoundCount() {
@@ -3572,8 +3766,14 @@ function _batchUpdateCounters() {
     var found = _batchFoundCount();
     var loading = batch.queue.filter(function(i) { return i.status === 'loading'; }).length;
     document.getElementById('batchCounter').textContent = total + ' livro' + (total !== 1 ? 's' : '');
+    var estText = '';
+    if (total > 1 && batch.startTime) {
+        var elapsed = (Date.now() - batch.startTime) / 1000;
+        var rate = total / elapsed; // livros/segundo
+        if (rate > 0 && loading > 0) { estText = ' (~' + Math.ceil(loading / rate) + 's restantes)'; }
+    }
     document.getElementById('batchStatusMsg').textContent =
-        loading > 0 ? 'A procurar ' + loading + '...' :
+        loading > 0 ? 'A procurar ' + loading + '...' + estText :
         found > 0 ? found + ' prontos para adicionar' : 'A aguardar scan...';
     var btn = document.getElementById('batchAddBtn');
     if (found > 0) {
@@ -3593,8 +3793,9 @@ function _batchRenderItem(item, idx) {
         document.getElementById('batchQueue').prepend(el);
     }
     var statusIcons = { loading: '<span style="opacity:0.5;font-size:0.9em;">⏳</span>', found: '<span style="color:var(--success);">✓</span>', notfound: '<span style="color:var(--warning);">?</span>', exists: '<span style="color:var(--info);">📚</span>' };
-    var coverHtml = item.book && item.book.cover
-        ? '<img src="' + esc(item.book.cover) + '" style="width:32px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\'none\'">'
+    var _bCover = item.book && item.book.cover && (item.book.cover.startsWith('http') || item.book.cover.startsWith('/')) ? item.book.cover : '';
+    var coverHtml = _bCover
+        ? '<img src="' + esc(_bCover) + '" style="width:32px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\'none\'">'
         : '<div style="width:32px;height:44px;background:rgba(255,255,255,0.08);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1em;">📖</div>';
     var title = item.book ? esc(item.book.title) : '<span style="color:rgba(255,255,255,0.4);font-style:italic;">ISBN ' + esc(item.isbn) + '</span>';
     var sub = item.book && item.book.author ? '<div style="color:rgba(255,255,255,0.45);font-size:0.75em;margin-top:2px;">' + esc(item.book.author) + '</div>' :
@@ -3615,9 +3816,10 @@ async function _batchFetchBook(idx) {
     var variants = isbnVariants(normalizeISBN(isbn));
 
     // Tentar Google Books (mais rapido, melhor cobertura)
+    var _batchSignal = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
     for (var vi = 0; vi < variants.length; vi++) {
         try {
-            var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + variants[vi] + '&maxResults=1');
+            var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + variants[vi] + '&maxResults=1', { signal: _batchSignal });
             var d = await r.json();
             if (d.items && d.items[0]) {
                 var v = d.items[0].volumeInfo;
@@ -3635,9 +3837,10 @@ async function _batchFetchBook(idx) {
     }
 
     // Fallback Open Library
+    var _batchSignal2 = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
     for (var vi2 = 0; vi2 < variants.length; vi2++) {
         try {
-            var r2 = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + variants[vi2] + '&format=json&jscmd=data');
+            var r2 = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + variants[vi2] + '&format=json&jscmd=data', { signal: _batchSignal2 });
             var d2 = await r2.json();
             var key = 'ISBN:' + variants[vi2];
             if (d2[key]) {
@@ -3684,11 +3887,14 @@ function _batchDetected(rawIsbn) {
 }
 
 async function openBatchScanner() {
+    // Close any previous batch scanner to avoid video duplication
+    if (batch.active || batch.stream || batch.html5qr) { await closeBatchScanner(); }
     var modal = document.getElementById('batchScannerModal');
     modal.classList.add('visible');
     batch.active = true;
     batch.seen.clear();
     batch.queue = [];
+    batch.startTime = Date.now();
     document.getElementById('batchQueue').innerHTML = '';
     document.getElementById('batchAddBtn').style.display = 'none';
     _batchUpdateCounters();
@@ -3796,11 +4002,29 @@ async function addAllBatchBooks() {
 }
 
 // ============ INIT ============
+if (_libParseError) { setTimeout(function(){ showToast('Erro a carregar biblioteca local. A usar lista vazia.', 'error'); }, 800); }
 renderBooks();
 if (currentView === 'list') { document.getElementById('libraryGrid').classList.add('list-view'); }
 
 // ============ SERVICE WORKER ============
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(function(reg) {
+        reg.onupdatefound = function() {
+            var sw = reg.installing;
+            sw.onstatechange = function() {
+                if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                    showToast('Nova versao disponivel. Recarrega a pagina!', 'info');
+                }
+            };
+        };
+    }).catch(function(){});
+}
+
+// ============ PWA INSTALL ============
+window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    window._pwaInstallEvent = e;
+});
 </script>
 </body>
 </html>
