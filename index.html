@@ -623,7 +623,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 10, em 18.04.2026</span>
+                <span class="header-version">Versão 11, em 18.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -721,9 +721,10 @@
                 <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}">
                 <button class="btn btn-accent" onclick="searchBooks()">Pesquisar</button>
                 <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 ISBN</button>
-                <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar a capa para identificar o livro" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
+                <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar capa ou verso do livro. O codigo de barras no verso e lido automaticamente." style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
+                <button class="btn-scanner" onclick="openBatchScanner()" title="Scanear multiplos livros de seguida (modo lote)" style="background:linear-gradient(135deg,#059669,#16a34a);color:white;">📦 Lote</button>
             </div>
-            <p class="api-hint">Pesquisa por nome, ISBN, scanner de codigo de barras ou foto da capa</p>
+            <p class="api-hint">Pesquisa por nome, ISBN, scanner de codigo de barras, foto da capa ou <strong>scan em lote</strong></p>
             <div class="api-results" id="apiResults"></div>
         </div>
 
@@ -897,6 +898,31 @@
     </div>
 </div>
 
+<!-- BATCH SCANNER MODAL -->
+<div class="scanner-modal" id="batchScannerModal" style="background:rgba(5,8,20,0.98);">
+    <button class="scanner-close" onclick="closeBatchScanner()">&times;</button>
+    <div style="display:flex;flex-direction:column;height:100%;max-width:620px;margin:0 auto;padding:8px 0 env(safe-area-inset-bottom,8px);">
+        <div style="padding:10px 16px 6px;text-align:center;flex-shrink:0;">
+            <h3 style="color:white;margin:0 0 2px;font-size:1.1em;">📦 Scanner em Lote</h3>
+            <p style="color:rgba(255,255,255,0.6);font-size:0.8em;margin:0;">Aponta para o codigo de barras de cada livro — deteta automaticamente</p>
+        </div>
+        <div id="batchScannerView" style="flex-shrink:0;height:180px;overflow:hidden;margin:0 16px 8px;border-radius:12px;background:#111;position:relative;">
+            <div id="batchScannerOverlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2;">
+                <div style="border:2px solid rgba(201,162,39,0.8);border-radius:6px;width:260px;height:90px;box-shadow:0 0 0 9999px rgba(0,0,0,0.35);"></div>
+            </div>
+        </div>
+        <div style="padding:4px 16px 6px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span id="batchCounter" style="color:white;font-weight:700;font-size:1.05em;">0 livros</span>
+            <span id="batchStatusMsg" style="color:rgba(255,255,255,0.55);font-size:0.8em;text-align:right;">A aguardar scan...</span>
+        </div>
+        <div id="batchQueue" style="flex:1;overflow-y:auto;padding:0 16px 6px;display:flex;flex-direction:column;gap:8px;"></div>
+        <div style="padding:10px 16px;flex-shrink:0;display:flex;gap:8px;">
+            <button id="batchAddBtn" onclick="addAllBatchBooks()" style="flex:1;background:var(--accent);color:#1a1a2e;border:none;padding:13px;border-radius:12px;font-weight:700;font-size:0.95em;cursor:pointer;display:none;"></button>
+            <button onclick="closeBatchScanner()" style="flex:0 0 auto;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:white;padding:13px 18px;border-radius:12px;cursor:pointer;font-family:inherit;font-size:0.9em;">Fechar</button>
+        </div>
+    </div>
+</div>
+
 <!-- BARCODE SCANNER -->
 <div class="scanner-modal" id="scannerModal">
     <button class="scanner-close" onclick="closeScanner()">&times;</button>
@@ -975,6 +1001,11 @@ var supabaseClient = null;
 try {
     if (window.supabase && window.supabase.createClient) {
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // Ping imediato ao abrir a app: impede que a BD pause por inatividade.
+        // Supabase gratuito pausa apos 7 dias sem atividade — este ping conta como atividade.
+        fetch(SUPABASE_URL + '/rest/v1/books?select=id&limit=1', {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+        }).catch(function() {});
     }
 } catch(e) { console.warn('Supabase nao disponivel, a usar localStorage:', e); }
 
@@ -2839,36 +2870,45 @@ async function detectBarcodeInImage(file) {
     return null;
 }
 
-// Pre-processar imagem: resize, greyscale, aumento de contraste/nitidez
+// Pre-processar imagem para OCR: resize, greyscale, contraste, auto-inversao em capas escuras
 async function preprocessCoverImage(file) {
     return new Promise(function(resolve, reject) {
         var img = new Image();
         img.onload = function() {
             var canvas = document.createElement('canvas');
-            // Resize: maximo 1400px no lado maior (resolucao suficiente para OCR)
-            var MAX = 1400;
+            // Resolucao maior = OCR mais preciso
+            var MAX = 1800;
             var scale = Math.min(1, MAX / Math.max(img.width, img.height));
             canvas.width = Math.round(img.width * scale);
             canvas.height = Math.round(img.height * scale);
             var ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            // Aumentar contraste e converter para greyscale
             var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             var d = imgData.data;
-            var contrast = 1.4;
-            var intercept = 128 * (1 - contrast);
+
+            // Calcular brilho medio para detetar capas escuras (texto branco em fundo escuro)
+            var totalBrightness = 0;
             for (var i = 0; i < d.length; i += 4) {
-                // Greyscale perceptual
-                var g = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-                // Contraste
+                totalBrightness += d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+            }
+            var avgBrightness = totalBrightness / (d.length / 4);
+            var isDarkCover = avgBrightness < 100; // capas escuras beneficiam de inversao
+
+            var contrast = 1.6;
+            var intercept = 128 * (1 - contrast);
+            for (var j = 0; j < d.length; j += 4) {
+                var g = d[j] * 0.299 + d[j+1] * 0.587 + d[j+2] * 0.114;
                 g = g * contrast + intercept;
                 g = Math.max(0, Math.min(255, g));
-                d[i] = d[i+1] = d[i+2] = g;
+                if (isDarkCover) g = 255 - g; // inverter para texto escuro em fundo branco
+                d[j] = d[j+1] = d[j+2] = g;
             }
             ctx.putImageData(imgData, 0, 0);
 
-            canvas.toBlob(function(blob) { resolve({ blob: blob, dataUrl: canvas.toDataURL('image/jpeg', 0.92) }); }, 'image/jpeg', 0.92);
+            canvas.toBlob(function(blob) {
+                resolve({ blob: blob, dataUrl: canvas.toDataURL('image/jpeg', 0.93), isDark: isDarkCover });
+            }, 'image/jpeg', 0.93);
         };
         img.onerror = reject;
         img.src = URL.createObjectURL(file);
@@ -2964,14 +3004,22 @@ async function handleCoverScan(event) {
                 if (m.status === 'recognizing text') {
                     var pct = Math.round(m.progress * 65) + 30;
                     progressBar.style.width = pct + '%';
-                    status.textContent = 'A ler texto... ' + pct + '%';
+                    status.textContent = 'A ler texto... ' + Math.round(pct) + '%';
                 }
             }
         });
 
         progressBar.style.width = '100%';
-        var rawText = (result.data.text || '').trim();
-        console.log('OCR raw:', rawText);
+
+        // Usar dados de confianca por linha (muito mais preciso que texto bruto)
+        var tesLines = result.data.lines || [];
+        var confidentText = tesLines
+            .filter(function(l) { return l.confidence >= 30 && l.text.trim().length >= 3; })
+            .map(function(l) { return l.text.trim(); })
+            .join('\n');
+        var rawText = confidentText || (result.data.text || '').trim();
+
+        console.log('OCR raw (filtrado):', rawText);
 
         var lines = cleanOcrLines(rawText);
         console.log('OCR linhas limpas:', lines);
@@ -3060,12 +3108,18 @@ async function searchFromCover() {
     if (searchBtn) { searchBtn.disabled = true; searchBtn.textContent = 'A pesquisar...'; }
 
     try {
-        // Estrategia: varias queries + agregacao
+        // Estrategia: varias queries + agregacao (titulo completo, titulo sozinho,
+        // titulo + ultimo apelido, palavras-chave individuais)
+        var titleWords = title.split(/\s+/).filter(function(w) { return w.length >= 4; });
         var queries = [
             queryBase,
             title,
-            author ? title + ' ' + author.split(' ').slice(-1)[0] : null
-        ].filter(Boolean);
+            author ? title + ' ' + author.split(' ').slice(-1)[0] : null,
+            // Tentativa com palavras mais longas (ignora artigos e curtas)
+            titleWords.length >= 2 ? titleWords.slice(0, 3).join(' ') : null,
+            // Google Books com intitle: para precisao
+            title.length > 4 ? 'intitle:' + title.split(' ').slice(0, 4).join('+') : null
+        ].filter(Boolean).filter(function(q, i, arr) { return arr.indexOf(q) === i; }); // dedup
 
         var allResults = [];
         var seenKeys = new Set();
@@ -3497,6 +3551,248 @@ async function closeScanner() {
             v.srcObject.getTracks().forEach(function(t) { t.stop(); });
         }
     });
+}
+
+// ============ BATCH SCANNER ============
+var batch = {
+    active: false,
+    stream: null,
+    bd: null,
+    raf: null,
+    html5qr: null,
+    seen: new Set(),   // ISBNs ja adicionados a queue (dedup)
+    queue: []          // [{isbn, status, book}]
+};
+
+function _batchFoundCount() {
+    return batch.queue.filter(function(i) { return i.status === 'found'; }).length;
+}
+function _batchUpdateCounters() {
+    var total = batch.queue.length;
+    var found = _batchFoundCount();
+    var loading = batch.queue.filter(function(i) { return i.status === 'loading'; }).length;
+    document.getElementById('batchCounter').textContent = total + ' livro' + (total !== 1 ? 's' : '');
+    document.getElementById('batchStatusMsg').textContent =
+        loading > 0 ? 'A procurar ' + loading + '...' :
+        found > 0 ? found + ' prontos para adicionar' : 'A aguardar scan...';
+    var btn = document.getElementById('batchAddBtn');
+    if (found > 0) {
+        btn.style.display = '';
+        btn.textContent = '✓ Adicionar ' + found + ' livro' + (found !== 1 ? 's' : '') + ' à biblioteca';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+function _batchRenderItem(item, idx) {
+    var el = document.getElementById('batchItem_' + idx);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'batchItem_' + idx;
+        el.style.cssText = 'display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);border-radius:10px;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);';
+        document.getElementById('batchQueue').prepend(el);
+    }
+    var statusIcons = { loading: '<span style="opacity:0.5;font-size:0.9em;">⏳</span>', found: '<span style="color:var(--success);">✓</span>', notfound: '<span style="color:var(--warning);">?</span>', exists: '<span style="color:var(--info);">📚</span>' };
+    var coverHtml = item.book && item.book.cover
+        ? '<img src="' + esc(item.book.cover) + '" style="width:32px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\'none\'">'
+        : '<div style="width:32px;height:44px;background:rgba(255,255,255,0.08);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1em;">📖</div>';
+    var title = item.book ? esc(item.book.title) : '<span style="color:rgba(255,255,255,0.4);font-style:italic;">ISBN ' + esc(item.isbn) + '</span>';
+    var sub = item.book && item.book.author ? '<div style="color:rgba(255,255,255,0.45);font-size:0.75em;margin-top:2px;">' + esc(item.book.author) + '</div>' :
+              item.status === 'notfound' ? '<div style="color:var(--warning);font-size:0.75em;margin-top:2px;">Nao encontrado — sera adicionado apenas com ISBN</div>' :
+              item.status === 'exists' ? '<div style="color:var(--info);font-size:0.75em;margin-top:2px;">Ja esta na biblioteca</div>' : '';
+    el.innerHTML = coverHtml +
+        '<div style="flex:1;min-width:0;">' +
+            '<div style="color:white;font-size:0.85em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + title + '</div>' +
+            sub +
+        '</div>' +
+        '<div style="flex-shrink:0;font-size:1em;">' + (statusIcons[item.status] || '') + '</div>';
+}
+
+async function _batchFetchBook(idx) {
+    var item = batch.queue[idx];
+    if (!item) return;
+    var isbn = item.isbn;
+    var variants = isbnVariants(normalizeISBN(isbn));
+
+    // Tentar Google Books (mais rapido, melhor cobertura)
+    for (var vi = 0; vi < variants.length; vi++) {
+        try {
+            var r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + variants[vi] + '&maxResults=1');
+            var d = await r.json();
+            if (d.items && d.items[0]) {
+                var v = d.items[0].volumeInfo;
+                var cover = '';
+                if (v.imageLinks) cover = fixUrl(v.imageLinks.large || v.imageLinks.medium || v.imageLinks.thumbnail || v.imageLinks.smallThumbnail || '').replace('&edge=curl','').replace('zoom=1','zoom=3');
+                var isbnVal = isbn;
+                if (v.industryIdentifiers) { var i13 = v.industryIdentifiers.find(function(id){return id.type==='ISBN_13';}); if (i13) isbnVal = i13.identifier; }
+                item.book = { title: v.title||'', author: (v.authors||[]).join(', '), cover: cover, genre: (v.categories||['Geral'])[0], year: v.publishedDate?(v.publishedDate.substring(0,4)):'', publisher: v.publisher||'', publisherMain: v.publisher||'', pages: v.pageCount||0, isbn: isbnVal, summary: v.description||'', language: v.language==='pt'?'Portugues':(v.language||''), readingStatus: 'naoLido', subtitle: v.subtitle||'', rating: 0 };
+                item.status = 'found';
+                _batchRenderItem(item, idx);
+                _batchUpdateCounters();
+                return;
+            }
+        } catch(e) {}
+    }
+
+    // Fallback Open Library
+    for (var vi2 = 0; vi2 < variants.length; vi2++) {
+        try {
+            var r2 = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + variants[vi2] + '&format=json&jscmd=data');
+            var d2 = await r2.json();
+            var key = 'ISBN:' + variants[vi2];
+            if (d2[key]) {
+                var bk = d2[key];
+                var coverUrl = bk.cover ? (bk.cover.large || bk.cover.medium || bk.cover.small || '') : '';
+                item.book = { title: bk.title||'', author: bk.authors?(bk.authors.map(function(a){return a.name;}).join(', ')):'', cover: coverUrl, genre: bk.subjects?(bk.subjects[0]&&bk.subjects[0].name||'Geral'):'Geral', year: bk.publish_date?(bk.publish_date.replace(/.*(\d{4}).*/,'$1')):'', publisher: bk.publishers?(bk.publishers.map(function(p){return p.name;}).join(', ')):'', publisherMain: bk.publishers&&bk.publishers[0]?bk.publishers[0].name:'', pages: bk.number_of_pages||0, isbn: variants[vi2], summary: '', language: 'Portugues', readingStatus: 'naoLido', subtitle: bk.subtitle||'', rating: 0 };
+                item.status = 'found';
+                _batchRenderItem(item, idx);
+                _batchUpdateCounters();
+                return;
+            }
+        } catch(e) {}
+    }
+
+    // Nao encontrado — guardar so com ISBN
+    item.status = 'notfound';
+    item.book = { title: 'ISBN: ' + isbn, isbn: isbn, readingStatus: 'naoLido', rating: 0, author: '', genre: 'Geral' };
+    _batchRenderItem(item, idx);
+    _batchUpdateCounters();
+}
+
+function _batchDetected(rawIsbn) {
+    if (!batch.active) return;
+    var isbn = normalizeISBN(rawIsbn);
+    if (!isbn || isbn.length < 10) return;
+    if (batch.seen.has(isbn)) return; // duplicado
+
+    batch.seen.add(isbn);
+    if (navigator.vibrate) navigator.vibrate(80);
+
+    // Verificar se ja esta na biblioteca
+    var alreadyIn = library.some(function(b) { return normalizeISBN(b.isbn || '') === isbn; });
+    var idx = batch.queue.length;
+    var item = { isbn: isbn, status: alreadyIn ? 'exists' : 'loading', book: null };
+    if (alreadyIn) {
+        var existing = library.find(function(b) { return normalizeISBN(b.isbn||'') === isbn; });
+        item.book = existing || null;
+    }
+    batch.queue.push(item);
+    _batchRenderItem(item, idx);
+    _batchUpdateCounters();
+
+    if (!alreadyIn) _batchFetchBook(idx);
+}
+
+async function openBatchScanner() {
+    var modal = document.getElementById('batchScannerModal');
+    modal.classList.add('visible');
+    batch.active = true;
+    batch.seen.clear();
+    batch.queue = [];
+    document.getElementById('batchQueue').innerHTML = '';
+    document.getElementById('batchAddBtn').style.display = 'none';
+    _batchUpdateCounters();
+
+    // Pedir camera
+    try {
+        batch.stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+    } catch(e) {
+        document.getElementById('batchStatusMsg').textContent = 'Sem acesso a camera.';
+        return;
+    }
+
+    var view = document.getElementById('batchScannerView');
+    // Manter a div de overlay, inserir video antes dela
+    var overlayDiv = document.getElementById('batchScannerOverlay');
+
+    // BarcodeDetector nativo
+    var useBD = false;
+    if ('BarcodeDetector' in window) {
+        try {
+            var fmts = await window.BarcodeDetector.getSupportedFormats();
+            var isbnFmts = fmts.filter(function(f) { return ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf'].indexOf(f) >= 0; });
+            if (isbnFmts.length > 0) { batch.bd = new window.BarcodeDetector({ formats: isbnFmts }); useBD = true; }
+        } catch(e) { useBD = false; }
+    }
+
+    if (useBD) {
+        var video = document.createElement('video');
+        video.srcObject = batch.stream;
+        video.setAttribute('playsinline',''); video.muted = true;
+        video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        view.insertBefore(video, overlayDiv);
+        await new Promise(function(res) { video.onloadedmetadata = function() { video.play().then(res).catch(res); }; });
+
+        var _loop = async function() {
+            if (!batch.active || !batch.bd) return;
+            try {
+                var codes = await batch.bd.detect(video);
+                codes.forEach(function(c) { _batchDetected(c.rawValue); });
+            } catch(e) {}
+            if (batch.active) batch.raf = requestAnimationFrame(_loop);
+        };
+        batch.raf = requestAnimationFrame(_loop);
+        document.getElementById('batchStatusMsg').textContent = 'Scanner ativo ⚡ — aponta para o codigo de barras';
+
+    } else if (typeof Html5Qrcode !== 'undefined') {
+        if (batch.stream) { batch.stream.getTracks().forEach(function(t){t.stop();}); batch.stream = null; }
+        try {
+            var cameras = await Html5Qrcode.getCameras();
+            if (!cameras || cameras.length === 0) { document.getElementById('batchStatusMsg').textContent = 'Nenhuma camera encontrada.'; return; }
+            var camId = cameras[cameras.length - 1].id;
+            for (var ci = 0; ci < cameras.length; ci++) { var lbl = (cameras[ci].label||'').toLowerCase(); if (lbl.indexOf('back')>=0||lbl.indexOf('rear')>=0||lbl.indexOf('environment')>=0){camId=cameras[ci].id;break;} }
+
+            batch.html5qr = new Html5Qrcode('batchScannerView');
+            var sw = Math.min(window.innerWidth - 32, 580);
+            var bw = Math.min(260, sw - 40);
+            await batch.html5qr.start(camId, { fps: 20, qrbox:{width:bw,height:Math.round(bw*0.42)}, aspectRatio:1.6, disableFlip:true, experimentalFeatures:{useBarCodeDetectorIfSupported:false}, formatsToSupport:[Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.ITF] },
+                function(txt) { _batchDetected(txt); }, function() {});
+            document.getElementById('batchStatusMsg').textContent = 'Scanner ativo — aponta para o codigo de barras';
+        } catch(e) { document.getElementById('batchStatusMsg').textContent = 'Erro ao iniciar camera.'; }
+    }
+}
+
+async function closeBatchScanner() {
+    batch.active = false;
+    document.getElementById('batchScannerModal').classList.remove('visible');
+    if (batch.raf) { cancelAnimationFrame(batch.raf); batch.raf = null; }
+    batch.bd = null;
+    if (batch.stream) { batch.stream.getTracks().forEach(function(t){t.stop();}); batch.stream = null; }
+    if (batch.html5qr) {
+        try { var st = batch.html5qr.getState(); if (st===2||st===3) await batch.html5qr.stop(); } catch(e) {}
+        try { batch.html5qr.clear(); } catch(e) {}
+        batch.html5qr = null;
+    }
+    var videos = document.querySelectorAll('#batchScannerView video');
+    videos.forEach(function(v) { if (v.srcObject) v.srcObject.getTracks().forEach(function(t){t.stop();}); });
+}
+
+async function addAllBatchBooks() {
+    var toAdd = batch.queue.filter(function(i) { return i.status === 'found' || i.status === 'notfound'; });
+    if (toAdd.length === 0) { showToast('Nenhum livro para adicionar.', 'warning'); return; }
+
+    var added = 0;
+    toAdd.forEach(function(item) {
+        if (!item.book || !item.book.title) return;
+        var dup = library.some(function(b) {
+            return (item.book.isbn && normalizeISBN(b.isbn||'') === normalizeISBN(item.book.isbn)) ||
+                   b.title.toLowerCase() === item.book.title.toLowerCase();
+        });
+        if (dup) return;
+        library.push(Object.assign({ lentTo:'', loanDate:'', loanNotes:'', loanHistory:[], favorite:false, addedAt:Date.now() }, item.book));
+        added++;
+    });
+
+    if (added > 0) {
+        save();
+        renderBooks();
+        showToast(added + ' livro' + (added!==1?'s':'') + ' adicionado' + (added!==1?'s':'') + ' com sucesso!', 'success');
+    } else {
+        showToast('Todos os livros ja estao na biblioteca.', 'info');
+    }
+    await closeBatchScanner();
 }
 
 // ============ INIT ============
