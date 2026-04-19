@@ -651,6 +651,7 @@
             <button class="header-btn" onclick="openCommandPalette()" id="cmdBtn" title="Procurar (Ctrl+K)">⌘</button>
             <button class="header-btn" onclick="openShortcutsModal()" title="Atalhos (?)">?</button>
             <button class="header-btn" onclick="toggleDarkMode()" id="themeBtn" title="Modo escuro">🌙</button>
+            <button class="header-btn" onclick="toggleGoal()" id="goalBtn" title="Meta de Leitura">🎯</button>
             <button class="header-btn" onclick="toggleStats()" title="Estatisticas">📊</button>
             <button class="header-btn" onclick="suggestRandom()" title="Sugestao aleatoria">🎲</button>
             <button class="header-btn" onclick="shareLibrary()" title="Partilhar">📤</button>
@@ -1888,6 +1889,26 @@ function changeFontSize(d) {
     localStorage.setItem('fontSize', n);
 }
 (function(){ const s = localStorage.getItem('fontSize'); if(s) document.body.style.fontSize = s + 'px'; })();
+
+// ============ META DE LEITURA TOGGLE ============
+function toggleGoal() {
+    var el = document.getElementById('readingGoal');
+    var btn = document.getElementById('goalBtn');
+    var hidden = el.style.display === 'none';
+    el.style.display = hidden ? '' : 'none';
+    btn.style.opacity = hidden ? '1' : '0.45';
+    btn.title = hidden ? 'Ocultar Meta de Leitura' : 'Mostrar Meta de Leitura';
+    localStorage.setItem('goalVisible', hidden ? '1' : '0');
+}
+// Restaurar estado ao carregar
+(function() {
+    var pref = localStorage.getItem('goalVisible');
+    if (pref === '0') {
+        document.getElementById('readingGoal').style.display = 'none';
+        var btn = document.getElementById('goalBtn');
+        if (btn) { btn.style.opacity = '0.45'; btn.title = 'Mostrar Meta de Leitura'; }
+    }
+})();
 
 // ============ STATS DASHBOARD ============
 function toggleStats() {
