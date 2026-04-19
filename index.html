@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 16, em 19.04.2026</span>
+                <span class="header-version">Versão 17, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -748,6 +748,7 @@
                 <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 ISBN</button>
                 <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar capa ou verso do livro. O codigo de barras no verso e lido automaticamente." style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
                 <button class="btn-scanner" onclick="openBatchScanner()" title="Scanear multiplos livros de seguida (modo lote)" style="background:linear-gradient(135deg,#059669,#16a34a);color:white;">📦 Lote</button>
+                <label class="btn-scanner" title="Importar várias fotos de capas de uma vez" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;cursor:pointer;">📁 Fotos<input type="file" accept="image/*" multiple onchange="startPhotoImport(event)" style="display:none;"></label>
             </div>
             <p class="api-hint">Pesquisa por nome, ISBN, scanner de codigo de barras, foto da capa ou <strong>scan em lote</strong></p>
             <div class="api-results" id="apiResults"></div>
@@ -2879,9 +2880,12 @@ function dismissOnboarding() { document.getElementById('onboarding').style.displ
 // ============ BACKUP REMINDER ============
 (function(){
     const last = localStorage.getItem('lastBackup');
-    const days = last ? Math.floor((Date.now() - parseInt(last)) / 86400000) : 999;
-    if (days > 30 && library.length > 5) {
-        setTimeout(() => showToast('Ja passaram '+days+' dias sem backup. Exporta os teus dados!', 'warning'), 3000);
+    const days = last ? Math.floor((Date.now() - parseInt(last)) / 86400000) : null;
+    if ((days === null || days > 30) && library.length > 5) {
+        const msg = days === null
+            ? 'Ainda não fizeste backup! Exporta os teus dados para não os perderes.'
+            : 'Já passaram ' + days + ' dias sem backup. Exporta os teus dados!';
+        setTimeout(() => showToast(msg, 'warning'), 3000);
     }
 })();
 function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
@@ -3382,145 +3386,230 @@ function scoreTitleLine(line) {
     return score;
 }
 
+// Extrai titulo e autor da imagem usando bounding boxes das palavras OCR
+// Palavras com fonte maior = titulo; palavras médias = autor
+function extractTitleAuthorFromOCR(ocrResult) {
+    var publisherBlacklist = /^(editora|publishers?|press|leya|bertrand|gradiva|presença|dom quixote|caminho|porto|manuscrito|topbooks|actual|lua de papel|gestão|colec[çc][aã]o|bestseller|best.?seller|autor de|tradu[çc][aã]o|edition|edi[çc][aã]o|volume|vol\.|col\.|gradiva|actual|temas|debates)$/i;
+
+    var words = (ocrResult.data.words || []).filter(function(w) {
+        var t = w.text.trim();
+        return w.confidence > 20 && t.length >= 2 && /[a-zA-ZÀ-ÿ]/.test(t) && !publisherBlacklist.test(t);
+    });
+    if (!words.length) return { title: '', author: '' };
+
+    // Calcular altura de cada palavra pelo bounding box
+    words.forEach(function(w) { w._h = w.bbox.y1 - w.bbox.y0; });
+    var maxH = Math.max.apply(null, words.map(function(w) { return w._h; }));
+    if (!maxH) return { title: '', author: '' };
+
+    // Palavras grandes (>= 40% da max) = candidatos a titulo
+    var bigWords = words.filter(function(w) { return w._h >= maxH * 0.4; });
+    // Palavras médias (20-40%) = candidatos a autor
+    var medWords = words.filter(function(w) { return w._h >= maxH * 0.2 && w._h < maxH * 0.4; });
+
+    // Ordenar por ordem de leitura (linha a linha, esquerda para direita)
+    function readingOrder(a, b) {
+        var lineA = Math.round(a.bbox.y0 / (maxH * 0.7));
+        var lineB = Math.round(b.bbox.y0 / (maxH * 0.7));
+        return lineA !== lineB ? lineA - lineB : a.bbox.x0 - b.bbox.x0;
+    }
+    bigWords.sort(readingOrder);
+    medWords.sort(readingOrder);
+
+    var title = bigWords.map(function(w) { return w.text; }).join(' ').replace(/\s+/g, ' ').trim();
+
+    // Autor: sequência de palavras capitalizadas no texto médio
+    var authorParts = [];
+    medWords.forEach(function(w) {
+        if (/^[A-ZÀ-Þ][a-zA-ZÀ-ÿ]/.test(w.text) || (w.text.length <= 3 && authorParts.length > 0)) {
+            authorParts.push(w.text);
+        }
+    });
+    var author = authorParts.slice(0, 4).join(' ').trim();
+
+    return { title: title, author: author };
+}
+
 async function handleCoverScan(event) {
     var file = event.target.files[0];
     if (!file) return;
     event.target.value = '';
+    await _processCoverFile(file);
+}
 
+// Núcleo de processamento de uma foto de capa — usado tanto pelo scan individual como pelo import em lote
+async function _processCoverFile(file, opts) {
+    opts = opts || {};
     var overlay = document.getElementById('coverScanOverlay');
     var preview = document.getElementById('coverScanPreview');
-    var status = document.getElementById('coverScanStatus');
+    var status  = document.getElementById('coverScanStatus');
     var progressBar = document.getElementById('coverScanProgressBar');
-    overlay.classList.add('visible');
-    status.textContent = 'A analisar imagem...';
+
+    if (!opts.keepOverlay) {
+        overlay.classList.add('visible');
+    }
+    status.textContent = opts.label || 'A analisar imagem...';
     progressBar.style.width = '5%';
 
     var imgUrl = URL.createObjectURL(file);
     preview.innerHTML = '<img src="' + imgUrl + '" style="width:100%;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">';
 
-    // PASSO 1: Tentar detectar codigo de barras/ISBN diretamente na imagem
-    // (funciona muito bem se o utilizador fotografar o verso do livro)
+    // PASSO 1: código de barras (funciona se o utilizador fotografar o verso)
     try {
-        status.textContent = 'A procurar codigo de barras...';
-        progressBar.style.width = '20%';
-        var detectedISBN = await detectBarcodeInImage(file);
-        if (detectedISBN) {
+        status.textContent = 'A procurar código de barras...';
+        progressBar.style.width = '15%';
+        var isbn = await detectBarcodeInImage(file);
+        if (isbn) {
             progressBar.style.width = '100%';
-            status.innerHTML = '<span style="color:var(--success);">&#10003; ISBN detectado: ' + esc(detectedISBN) + '</span>';
-            setTimeout(function() {
-                overlay.classList.remove('visible');
-                URL.revokeObjectURL(imgUrl);
-                document.getElementById('apiQuery').value = detectedISBN;
-                searchBooks();
-            }, 900);
+            status.innerHTML = '<span style="color:var(--success);">✓ ISBN detectado: ' + esc(isbn) + '</span>';
+            await new Promise(function(r){ setTimeout(r, 700); });
+            overlay.classList.remove('visible');
+            URL.revokeObjectURL(imgUrl);
+            document.getElementById('apiQuery').value = isbn;
+            if (opts.onISBN) opts.onISBN(isbn);
+            else searchBooks();
             return;
         }
-    } catch(e) { console.warn('Detecao barcode na imagem falhou:', e); }
+    } catch(e) {}
 
-    // PASSO 2: Fallback OCR — tentar ler titulo da capa
+    // PASSO 2: OCR — ler texto da capa
     if (typeof Tesseract === 'undefined') {
-        status.innerHTML = '<span style="color:var(--warning);">Nenhum codigo de barras encontrado. Tenta fotografar o verso do livro.</span>';
-        showCoverEditUI([], '', imgUrl);
+        showCoverEditUI('', '', imgUrl, opts);
         return;
     }
 
     try {
-        var _ocrPass = async function(strategy, labelPct, basePct) {
-            status.textContent = 'A optimizar imagem (' + strategy + ')...';
-            progressBar.style.width = basePct + '%';
-            var processed = await preprocessCoverImage(file, strategy);
-            status.textContent = 'A ler texto da capa...';
-            var result = await Tesseract.recognize(processed.dataUrl, 'por+eng', {
-                tessedit_pageseg_mode: '6',   // bloco uniforme de texto — bom para titulos
-                tessedit_ocr_engine_mode: '1', // LSTM neural network
+        var _runOCR = async function(strategy, base, span) {
+            status.textContent = 'A preparar imagem...';
+            progressBar.style.width = base + '%';
+            var proc = await preprocessCoverImage(file, strategy);
+            status.textContent = 'A ler texto...';
+            return await Tesseract.recognize(proc.dataUrl, 'por+eng', {
+                tessedit_pageseg_mode: '11',   // sparse text — ideal para capas com texto disperso
+                tessedit_ocr_engine_mode: '1',
                 logger: function(m) {
                     if (m.status === 'recognizing text') {
-                        var pct = Math.round(m.progress * labelPct) + basePct;
-                        progressBar.style.width = Math.min(pct, 95) + '%';
+                        progressBar.style.width = (base + Math.round(m.progress * span)) + '%';
                         status.textContent = 'A ler texto... ' + Math.round(m.progress * 100) + '%';
                     }
                 }
             });
-            var tesLines = result.data.lines || [];
-            var confidentText = tesLines
-                .filter(function(l) { return l.confidence >= 25 && l.text.trim().length >= 3; })
-                .map(function(l) { return l.text.trim(); })
-                .join('\n');
-            return { text: confidentText || (result.data.text || '').trim(), lines: tesLines };
         };
 
-        // Passe 1: estrategia 'auto' (contraste moderado + inversao para capas escuras)
-        progressBar.style.width = '25%';
-        var pass1 = await _ocrPass('auto', 35, 25);
-        var lines1 = cleanOcrLines(pass1.text);
+        // Passe 1: estratégia auto
+        var r1 = await _runOCR('auto', 20, 50);
+        var extracted = extractTitleAuthorFromOCR(r1);
 
-        var allLines = lines1.slice();
-
-        // Passe 2: estrategia 'highcontrast' — so se passe 1 deu poucos resultados
-        if (lines1.length < 3) {
-            progressBar.style.width = '63%';
-            try {
-                var pass2 = await _ocrPass('highcontrast', 30, 63);
-                var lines2 = cleanOcrLines(pass2.text);
-                // Juntar linhas unicas dos dois passes
-                var seen = new Set(allLines.map(function(l) { return l.toLowerCase(); }));
-                lines2.forEach(function(l) { if (!seen.has(l.toLowerCase())) { allLines.push(l); seen.add(l.toLowerCase()); } });
-            } catch(e2) { console.warn('OCR passe 2 falhou:', e2); }
+        // Passe 2: highcontrast se o passe 1 deu pouco texto
+        if (!extracted.title || extracted.title.split(' ').length < 2) {
+            var r2 = await _runOCR('highcontrast', 72, 24);
+            var e2 = extractTitleAuthorFromOCR(r2);
+            if (e2.title.length > extracted.title.length) extracted = e2;
         }
 
         progressBar.style.width = '100%';
-        console.log('OCR linhas combinadas:', allLines);
-
-        if (allLines.length > 0) {
-            allLines.sort(function(a, b) { return scoreTitleLine(b) - scoreTitleLine(a); });
-        }
-
-        showCoverEditUI(allLines, pass1.text, imgUrl);
+        showCoverEditUI(extracted.title, extracted.author, imgUrl, opts);
 
     } catch(e) {
         console.error('Erro OCR:', e);
-        status.innerHTML = '<span style="color:var(--danger);">Erro: ' + (e.message || e) + '</span>';
-        setTimeout(function() { overlay.classList.remove('visible'); URL.revokeObjectURL(imgUrl); }, 3000);
+        showCoverEditUI('', '', imgUrl, opts);
     }
 }
 
-// UI para editar o titulo detectado e pesquisar
-function showCoverEditUI(lines, rawText, imgUrl) {
+// ============ IMPORTAÇÃO EM LOTE DE FOTOS ============
+var _importQueue = [];
+var _importIdx   = 0;
+
+function startPhotoImport(event) {
+    var files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    // Garantir que o formulário está visível
+    var form = document.getElementById('addBookForm');
+    if (!form.classList.contains('visible')) { clearForm(); form.classList.add('visible'); }
+
+    _importQueue = files;
+    _importIdx   = 0;
+    _processImportNext();
+}
+
+function _processImportNext() {
+    if (_importIdx >= _importQueue.length) {
+        showToast('Importação concluída! ' + _importQueue.length + ' fotos processadas.', 'success');
+        _importQueue = [];
+        return;
+    }
+    var file = _importQueue[_importIdx];
+    var total = _importQueue.length;
+    var idx   = _importIdx;
+
+    // Restaurar overlay para estado limpo antes de cada foto
+    closeCoverScan();
+
+    _processCoverFile(file, {
+        label: 'Foto ' + (idx + 1) + ' de ' + total + '...',
+        queueInfo: { idx: idx, total: total },
+        onISBN: function(isbn) {
+            _importIdx++;
+            document.getElementById('apiQuery').value = isbn;
+            searchBooks();
+            // Continuar fila após breve pausa para o utilizador ver o resultado
+            setTimeout(_processImportNext, 4000);
+        }
+    });
+}
+
+// UI para confirmar titulo/autor detectados e lançar pesquisa
+function showCoverEditUI(title, author, imgUrl, opts) {
+    opts = opts || {};
     var overlay = document.getElementById('coverScanOverlay');
-    var best = Array.isArray(lines) && lines.length > 0 ? lines[0] : '';
-    var secondary = Array.isArray(lines) && lines.length > 1 ? lines[1] : '';
+    var qi = opts.queueInfo;
+    var queueBar = qi ? '<div style="font-size:0.78em;opacity:0.65;margin-bottom:8px;">📁 Foto ' + (qi.idx + 1) + ' de ' + qi.total + '</div>' : '';
+    var skipBtn = qi
+        ? '<button onclick="_importSkip()" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.3);color:white;padding:10px 18px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.9em;">Saltar →</button>'
+        : '<button onclick="closeCoverScan()" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.3);color:white;padding:10px 18px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.9em;">Cancelar</button>';
+    var hint = title ? 'Texto detectado. Corrige se necessário:' : 'Não detetei texto. Escreve o título manualmente:';
 
     overlay.innerHTML =
-        '<button class="scanner-close" onclick="closeCoverScan()">&times;</button>' +
-        '<div class="scanner-header" style="max-width:500px;">' +
-            '<h3>Confirma o livro</h3>' +
-            '<div style="margin:10px auto;max-width:180px;"><img src="' + imgUrl + '" style="width:100%;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);"></div>' +
-            '<p style="font-size:0.85em;opacity:0.8;margin-bottom:8px;">Texto detectado na capa. Ajusta se necessario antes de pesquisar:</p>' +
-            '<input type="text" id="coverEditTitle" value="' + esc(best) + '" placeholder="Titulo do livro" style="width:100%;padding:10px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:1em;margin-bottom:8px;">' +
-            '<input type="text" id="coverEditAuthor" value="' + esc(secondary) + '" placeholder="Autor (opcional)" style="width:100%;padding:10px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:0.95em;margin-bottom:10px;">' +
-            (Array.isArray(lines) && lines.length > 0 ? '<div style="text-align:left;margin-bottom:10px;"><p style="font-size:0.78em;opacity:0.7;margin-bottom:4px;">Outras linhas detectadas (clicar para usar):</p><div id="coverSuggestions" style="display:flex;flex-wrap:wrap;gap:5px;">' +
-                lines.slice(0, 8).map(function(l, i) { return '<button onclick="useOcrLine(' + i + ')" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:4px 10px;border-radius:12px;font-size:0.75em;cursor:pointer;font-family:inherit;">' + esc(l.substring(0, 30)) + '</button>'; }).join('') +
-            '</div></div>' : '') +
+        '<button class="scanner-close" onclick="' + (qi ? '_importSkip()' : 'closeCoverScan()') + '">&times;</button>' +
+        '<div class="scanner-header" style="max-width:480px;">' +
+            queueBar +
+            '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;">' +
+                '<img src="' + imgUrl + '" style="width:80px;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.4);flex-shrink:0;">' +
+                '<div style="flex:1;text-align:left;">' +
+                    '<p style="font-size:0.82em;opacity:0.75;margin-bottom:8px;">' + hint + '</p>' +
+                    '<input type="text" id="coverEditTitle" value="' + esc(title || '') + '" placeholder="Título do livro *" style="width:100%;padding:10px;border-radius:8px;border:none;background:rgba(255,255,255,0.95);color:#333;font-size:0.97em;margin-bottom:7px;box-sizing:border-box;">' +
+                    '<input type="text" id="coverEditAuthor" value="' + esc(author || '') + '" placeholder="Autor (opcional)" style="width:100%;padding:9px;border-radius:8px;border:none;background:rgba(255,255,255,0.9);color:#333;font-size:0.9em;box-sizing:border-box;">' +
+                '</div>' +
+            '</div>' +
             '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
                 '<button onclick="searchFromCover()" style="background:var(--accent);color:#1a1a2e;border:none;padding:10px 24px;border-radius:10px;font-weight:700;cursor:pointer;font-family:inherit;font-size:0.95em;">🔍 Pesquisar</button>' +
-                '<button onclick="closeCoverScan()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:10px 20px;border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.95em;">Cancelar</button>' +
+                skipBtn +
             '</div>' +
-            (rawText ? '<details style="margin-top:15px;text-align:left;font-size:0.78em;opacity:0.6;"><summary style="cursor:pointer;">Ver texto bruto do OCR</summary><pre style="white-space:pre-wrap;margin-top:5px;">' + esc(rawText) + '</pre></details>' : '') +
         '</div>';
-    // guardar linhas para uso dos botoes
-    window._ocrLines = lines || [];
+
     window._coverImgUrl = imgUrl;
+    window._coverImportOpts = opts;
+
+    // Auto-focus no título se estiver vazio
+    setTimeout(function() {
+        var t = document.getElementById('coverEditTitle');
+        if (t && !t.value.trim()) t.focus();
+    }, 100);
 }
 
-function useOcrLine(idx) {
-    var line = window._ocrLines[idx];
-    if (!line) return;
-    var titleEl = document.getElementById('coverEditTitle');
-    if (titleEl && !titleEl.value.trim()) titleEl.value = line;
-    else {
-        var authorEl = document.getElementById('coverEditAuthor');
-        if (authorEl) authorEl.value = line;
-    }
+function _importSkip() {
+    if (window._coverImgUrl) { URL.revokeObjectURL(window._coverImgUrl); window._coverImgUrl = null; }
+    _importIdx++;
+    closeCoverScan();
+    setTimeout(_processImportNext, 300);
+}
+
+function _importSkipToNext() {
+    document.getElementById('apiResults').classList.remove('visible');
+    document.getElementById('apiResults').innerHTML = '';
+    setTimeout(_processImportNext, 300);
 }
 
 function closeCoverScan() {
@@ -3629,6 +3718,18 @@ async function searchFromCover() {
             if (r.source === 'ol') rd.appendChild(buildOLResultItem(r.doc));
             else rd.appendChild(buildGBResultItem(r.item));
         });
+
+        // Em modo de importação em lote: mostrar botão para avançar para a próxima foto
+        var isImport = _importQueue.length > 0 && _importIdx < _importQueue.length;
+        if (isImport) {
+            var nextBtn = document.createElement('div');
+            nextBtn.style.cssText = 'padding:10px;text-align:center;border-top:1px solid var(--border);';
+            var remaining = _importQueue.length - _importIdx - 1;
+            nextBtn.innerHTML = '<button class="btn btn-outline btn-sm" onclick="_importSkipToNext()">' +
+                '⏭ Saltar para próxima foto' + (remaining > 0 ? ' (' + remaining + ' restantes)' : '') + '</button>';
+            rd.appendChild(nextBtn);
+            _importIdx++;
+        }
 
         showToast('Encontrados ' + allResults.length + ' resultados. Escolhe o correcto.', 'success');
 
