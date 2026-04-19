@@ -976,6 +976,10 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;">Emprestar Livro</h3><button onclick="closeModal('loanModal')" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:var(--text-light);" aria-label="Fechar">&times;</button></div>
         <input type="hidden" id="loanBookIndex">
         <div class="form-group"><label>A quem?</label><input type="text" id="loanName" placeholder="Nome da pessoa" list="loanHistory"><datalist id="loanHistory"></datalist></div>
+        <div class="form-row">
+            <div class="form-group"><label>Data do Empréstimo</label><input type="date" id="loanDate"></div>
+            <div class="form-group"><label>Data de Devolução Prevista</label><input type="date" id="loanDueDate"></div>
+        </div>
         <div class="form-group"><label>Notas (opcional)</label><input type="text" id="loanNotes" placeholder="Ex: devolver em 2 semanas"></div>
         <div class="form-row" style="margin-top:12px;">
             <button class="btn btn-accent" onclick="confirmLoan()">Confirmar</button>
@@ -1365,7 +1369,7 @@ function buildCard(book, query) {
             '</div>' +
             '<p class="card-summary">' + esc((book.summary||'').substring(0,90)) + ((book.summary||'').length > 90 ? '...' : '') + '</p>' +
             (tags ? '<div class="card-tags">' + tags + '</div>' : '') +
-            (isLent ? '<div class="loan-info">' + (daysLent > 90 ? '⚠️ ' : '') + '<strong>' + esc(book.lentTo) + '</strong> · ' + esc(book.loanDate||'') + ' ' + (daysLent > 30 ? '<span class="overdue">(' + daysLent + ' dias!)</span>' : '(' + daysLent + 'd)') + '</div>' : '') +
+            (isLent ? '<div class="loan-info">' + (daysLent > 90 ? '⚠️ ' : '') + '<strong>' + esc(book.lentTo) + '</strong> · ' + esc(book.loanDate||'') + ' ' + (daysLent > 30 ? '<span class="overdue">(' + daysLent + ' dias!)</span>' : '(' + daysLent + 'd)') + (book.loanDueDate ? '<br>📅 Devolução prevista: <strong>' + esc(book.loanDueDate) + '</strong>' : '') + '</div>' : '') +
             '<div class="card-actions">' +
                 (isLent ? '<button class="btn btn-success btn-xs" onclick="returnBook(' + idx + ')">Devolvido</button>' : '<button class="btn btn-accent btn-xs" onclick="openLoanModal(' + idx + ')">Emprestar</button>') +
                 '<button class="btn btn-outline btn-xs" onclick="editBook(' + idx + ')" title="Editar">✏️</button>' +
@@ -1721,6 +1725,10 @@ function openLoanModal(idx) {
     document.getElementById('loanBookIndex').value = idx;
     document.getElementById('loanName').value = '';
     document.getElementById('loanNotes').value = '';
+    // Pré-preencher data do empréstimo com hoje
+    var today = new Date().toISOString().split('T')[0];
+    document.getElementById('loanDate').value = today;
+    document.getElementById('loanDueDate').value = '';
     // Populate loan history datalist
     document.getElementById('loanHistory').innerHTML = loanPeople.map(p => `<option value="${esc(p)}">`).join('');
     openModal('loanModal');
@@ -1731,15 +1739,20 @@ function confirmLoan() {
     const idx = parseInt(document.getElementById('loanBookIndex').value);
     const name = document.getElementById('loanName').value.trim();
     if (!name) { showToast('Indica a quem vais emprestar!', 'error'); return; }
+    const loanDateVal = document.getElementById('loanDate').value;
+    const loanDueDateVal = document.getElementById('loanDueDate').value;
+    // Formatar datas para pt-PT
+    const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-PT') : '';
     library[idx].lentTo = name;
-    library[idx].loanDate = new Date().toLocaleDateString('pt-PT');
+    library[idx].loanDate = fmtDate(loanDateVal) || new Date().toLocaleDateString('pt-PT');
+    library[idx].loanDueDate = fmtDate(loanDueDateVal);
     library[idx].loanNotes = document.getElementById('loanNotes').value.trim();
     if (!library[idx].loanHistory) library[idx].loanHistory = [];
-    library[idx].loanHistory.push({ to: name, date: library[idx].loanDate, notes: library[idx].loanNotes });
+    library[idx].loanHistory.push({ to: name, date: library[idx].loanDate, dueDate: library[idx].loanDueDate, notes: library[idx].loanNotes });
     // Remember person
     if (!loanPeople.includes(name)) { loanPeople.push(name); localStorage.setItem('loanPeople', JSON.stringify(loanPeople)); }
     save(); closeModal('loanModal'); renderBooks();
-    showToast(`Emprestado a ${name}`, 'success');
+    showToast('Emprestado a ' + name, 'success');
 }
 
 async function returnBook(idx) {
@@ -1749,7 +1762,7 @@ async function returnBook(idx) {
     if (library[idx].loanHistory.length > 0) {
         library[idx].loanHistory[library[idx].loanHistory.length-1].returned = new Date().toLocaleDateString('pt-PT');
     }
-    library[idx].lentTo = ''; library[idx].loanDate = ''; library[idx].loanNotes = '';
+    library[idx].lentTo = ''; library[idx].loanDate = ''; library[idx].loanNotes = ''; library[idx].loanDueDate = '';
     save(); renderBooks();
     showToast('Livro devolvido!', 'success');
 }
