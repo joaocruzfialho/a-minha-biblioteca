@@ -2075,9 +2075,16 @@ function importLibrary(event) {
 }
 
 function printLibrary() {
-    const w = window.open('','','width=800,height=600');
-    const rows = library.map(b => `<tr><td>${esc(b.title)}</td><td>${esc(b.author)}</td><td>${esc(b.genre)}</td><td>${'★'.repeat(b.rating||0)}</td><td>${b.readingStatus||'nao lido'}</td><td>${b.location||''}</td></tr>`).join('');
-    w.document.write(`<html><head><title>A Minha Biblioteca</title><style>body{font-family:sans-serif}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#1a1a2e;color:white}tr:nth-child(even){background:#f9f9f9}</style></head><body><h1>A Minha Biblioteca (${library.length} livros)</h1><table><tr><th>Titulo</th><th>Autor</th><th>Categoria</th><th>Nota</th><th>Estado</th><th>Local</th></tr>${rows}</table></body></html>`);
+    var statusPT = { read: 'Lido', reading: 'A Ler', naoLido: 'Não Lido', wishlist: 'Lista de Desejos' };
+    var sorted = library.slice().sort(function(a, b) {
+        return (a.title || '').localeCompare(b.title || '', 'pt', { sensitivity: 'base' });
+    });
+    var rows = sorted.map(function(b) {
+        var estado = statusPT[b.readingStatus] || 'Não Lido';
+        return '<tr><td>' + esc(b.title) + '</td><td>' + esc(b.author) + '</td><td>' + esc(b.genre) + '</td><td>' + '★'.repeat(b.rating||0) + '</td><td>' + estado + '</td><td>' + esc(b.location||'') + '</td></tr>';
+    }).join('');
+    var w = window.open('', '', 'width=800,height=600');
+    w.document.write('<html><head><title>A Minha Biblioteca</title><style>body{font-family:sans-serif}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#1a1a2e;color:white}tr:nth-child(even){background:#f9f9f9}</style></head><body><h1>A Minha Biblioteca (' + library.length + ' livros)</h1><table><tr><th>Título</th><th>Autor</th><th>Categoria</th><th>Nota</th><th>Estado</th><th>Local</th></tr>' + rows + '</table></body></html>');
     w.document.close(); w.print();
 }
 
