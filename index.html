@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 20, em 19.04.2026</span>
+                <span class="header-version">Versão 21, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -3376,53 +3376,82 @@ async function _imageToBase64(file, maxPx) {
 
 // Extrai titulo/autor/query da resposta da Vision API
 function _extractBookFromVision(data) {
-    var title = '', author = '', query = '';
+    var title = '', author = '', query = '', ocrQuery = '';
     var bookSites = /goodreads|amazon|fnac|bertrand|wook|saraiva|cultura|livraria|wikipedia|worldcat|bookdepository|thriftbooks|abebooks|librarything/i;
     var isPersonName = function(s) { return /^[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+(\s+[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+)+$/.test(s.trim()); };
+    var publisherNoise = /\b(editora|editor[ae]s?|publishers?|press|leya|bertrand|gradiva|presença|dom quixote|caminho|porto editora|planeta|objectiva|quetzal|manuscrito|companhia|penguin|random house|harpercollins)\b/i;
 
-    // 1ª fonte: titulos das páginas com imagens correspondentes (mais fiável)
+    // FONTE PRIMÁRIA: texto OCR da Vision — está em PORTUGUÊS, directamente da capa
+    if (data.text) {
+        var ocrLines = data.text.split('\n')
+            .map(function(l) { return l.trim().replace(/\s+/g,' '); })
+            .filter(function(l) {
+                return l.length > 2 && /[a-zA-ZÀ-ÿ]{2}/.test(l) &&
+                       !/^\d[\d\s\-]*$/.test(l) &&        // ignorar só números
+                       !publisherNoise.test(l) &&          // ignorar editoras
+                       l.length < 80;
+            });
+        if (ocrLines.length > 0) {
+            title = ocrLines[0];
+            // Detectar autor: linha com nome próprio (2+ palavras capitalizadas)
+            for (var oi = 1; oi < Math.min(ocrLines.length, 5); oi++) {
+                if (isPersonName(ocrLines[oi])) { author = ocrLines[oi]; break; }
+            }
+            ocrQuery = ocrLines.slice(0, 3).join(' ');
+        }
+    }
+
+    // FONTE SECUNDÁRIA: títulos de páginas com imagens correspondentes
     var patterns = [
-        /^(.+?)\s+(?:by|de|por)\s+(.+?)(?:\s*[|\-–—]|$)/i,   // "Title by Author"
-        /^(.+?)\s*[|\-–—]\s*(.+?)\s*[|\-–—]/,                  // "Title - Author - Site"
-        /^(.+?)\s*[|\-–—]\s*([A-ZÀ-Þ][a-zA-ZÀ-ÿ. ]+)$/        // "Title - Author Name"
+        /^(.+?)\s+(?:by|de|por)\s+(.+?)(?:\s*[|\-–—]|$)/i,
+        /^(.+?)\s*[|\-–—]\s*(.+?)\s*[|\-–—]/,
+        /^(.+?)\s*[|\-–—]\s*([A-ZÀ-Þ][a-zA-ZÀ-ÿ. ]+)$/
     ];
     var pages = (data.webPages || []).sort(function(a, b) {
         return (bookSites.test(b.url) ? 1 : 0) - (bookSites.test(a.url) ? 1 : 0);
     });
-    for (var i = 0; i < pages.length && !title; i++) {
+    var pageTitle = '', pageAuthor = '';
+    for (var i = 0; i < pages.length && !pageTitle; i++) {
         var pt = (pages[i].title || '').replace(/\s+/g, ' ').trim();
         if (!pt) continue;
-        for (var j = 0; j < patterns.length && !title; j++) {
+        for (var j = 0; j < patterns.length && !pageTitle; j++) {
             var m = pt.match(patterns[j]);
             if (m && m[1].length > 2 && m[2].length > 2) {
-                var t = m[1].replace(/\(.*?\)/g, '').trim();
+                var t = m[1].replace(/\(.*?\)/g,'').trim();
                 var a = m[2].trim().split(/[|,]/)[0].trim();
-                if (t.length > 2 && !/^\d+$/.test(t)) { title = t; author = a; }
+                if (t.length > 2 && !/^\d+$/.test(t)) { pageTitle = t; pageAuthor = a; }
             }
         }
     }
 
-    // 2ª fonte: web entities (Google identifica o conteúdo da imagem)
-    if (!title && data.webEntities && data.webEntities.length) {
+    // FONTE TERCIÁRIA: web entities (título em inglês frequentemente — usar só se não tiver OCR)
+    var entityQuery = '';
+    if (data.webEntities && data.webEntities.length) {
         var ents = data.webEntities.filter(function(e) { return e.score > 0.45; });
         var nameEnt = ents.find(function(e) { return isPersonName(e.description); });
         var titleEnt = ents.find(function(e) { return !isPersonName(e.description) && e.description.length > 3; });
-        title = titleEnt ? titleEnt.description : (ents[0] ? ents[0].description : '');
-        author = nameEnt ? nameEnt.description : '';
+        var et = titleEnt ? titleEnt.description : '';
+        var ea = nameEnt ? nameEnt.description : '';
+        if (et) entityQuery = (et + ' ' + ea).trim();
+        // Só usar entidades para título/autor se o OCR não deu nada
+        if (!title && et) { title = et; author = ea; }
     }
 
-    // 3ª fonte: texto OCR do Vision (muito mais limpo que Tesseract em fotos)
-    if (!title && data.text) {
-        var lines = data.text.split('\n')
-            .map(function(l) { return l.trim(); })
-            .filter(function(l) { return l.length > 2 && /[a-zA-ZÀ-ÿ]{2}/.test(l); });
-        title = lines[0] || '';
-        if (!author && lines.length > 1 && isPersonName(lines[1])) author = lines[1];
-        query = lines.slice(0, 3).join(' ');
-    }
+    // Query final: OCR em PT é a mais fiável para pesquisa PT, depois page titles, depois entidades EN
+    query = ocrQuery || (pageTitle ? (pageTitle + ' ' + pageAuthor).trim() : entityQuery);
 
-    if (!query) query = (title + ' ' + author).trim();
-    return { title: title, author: author, query: query };
+    // Se OCR deu resultado mas page title também tem (com autor), preferir combinar
+    if (ocrQuery && pageAuthor && !author) author = pageAuthor;
+
+    return {
+        title: title || pageTitle,
+        author: author || pageAuthor,
+        query: query,
+        ocrQuery: ocrQuery,          // query em PT (directo da capa)
+        entityQuery: entityQuery,    // query em EN (para fallback)
+        pageTitle: pageTitle,        // título de sites de livros
+        pageAuthor: pageAuthor
+    };
 }
 
 // Pesquisa multi-estratégia no Google Books + Open Library com a query da Vision
@@ -3436,24 +3465,44 @@ async function _coverMultiSearch(query, hintTitle, hintAuthor) {
         hintAuthor ? query + ' inauthor:' + hintAuthor.split(' ').pop() : null,
     ].filter(Boolean).filter(function(q, i, a) { return a.indexOf(q) === i; }).slice(0, 4);
 
-    for (var qi = 0; qi < queries.length && results.length < 10; qi++) {
+    var GB = 'https://www.googleapis.com/books/v1/volumes?orderBy=relevance&maxResults=6&q=';
+    var OL = 'https://openlibrary.org/search.json?limit=5&q=';
+
+    for (var qi = 0; qi < queries.length && results.length < 12; qi++) {
         var q = queries[qi];
-        var [gbResp, olResp] = await Promise.allSettled([
-            fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=6&orderBy=relevance').then(function(r){return r.json();}),
-            fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=4').then(function(r){return r.json();})
+        // Pesquisa primeiro em PT, depois sem restrição — prioriza livros portugueses
+        var fetches = await Promise.allSettled([
+            fetch(GB + encodeURIComponent(q) + '&langRestrict=pt').then(function(r){return r.json();}),
+            fetch(GB + encodeURIComponent(q)).then(function(r){return r.json();}),
+            fetch(OL + encodeURIComponent(q) + '&language=por').then(function(r){return r.json();}),
+            fetch(OL + encodeURIComponent(q)).then(function(r){return r.json();})
         ]);
-        if (gbResp.status === 'fulfilled' && gbResp.value.items) {
-            gbResp.value.items.forEach(function(item) {
-                var k = 'gb:' + (item.volumeInfo.title||'') + '|' + ((item.volumeInfo.authors||[]).join(','));
-                if (!seenKeys.has(k)) { seenKeys.add(k); results.push({ source:'gb', item:item, _score: scoreMatch(item.volumeInfo.title, item.volumeInfo.authors, hintTitle||query, hintAuthor||'') }); }
-            });
-        }
-        if (olResp.status === 'fulfilled' && olResp.value.docs) {
-            olResp.value.docs.forEach(function(doc) {
-                var k = 'ol:' + (doc.key||doc.title);
-                if (!seenKeys.has(k)) { seenKeys.add(k); results.push({ source:'ol', doc:doc, _score: scoreMatch(doc.title, doc.author_name, hintTitle||query, hintAuthor||'') }); }
-            });
-        }
+
+        var addGB = function(item, ptBoost) {
+            var k = 'gb:' + (item.volumeInfo.title||'') + '|' + ((item.volumeInfo.authors||[]).join(','));
+            if (!seenKeys.has(k)) {
+                seenKeys.add(k);
+                var s = scoreMatch(item.volumeInfo.title, item.volumeInfo.authors, hintTitle||query, hintAuthor||'');
+                results.push({ source:'gb', item:item, _score: s + (ptBoost||0) });
+            }
+        };
+        var addOL = function(doc, ptBoost) {
+            var k = 'ol:' + (doc.key||doc.title);
+            if (!seenKeys.has(k)) {
+                seenKeys.add(k);
+                var s = scoreMatch(doc.title, doc.author_name, hintTitle||query, hintAuthor||'');
+                results.push({ source:'ol', doc:doc, _score: s + (ptBoost||0) });
+            }
+        };
+
+        if (fetches[0].status === 'fulfilled' && fetches[0].value.items)
+            fetches[0].value.items.forEach(function(i){ addGB(i, 30); }); // boost PT
+        if (fetches[1].status === 'fulfilled' && fetches[1].value.items)
+            fetches[1].value.items.forEach(function(i){ addGB(i, 0); });
+        if (fetches[2].status === 'fulfilled' && fetches[2].value.docs)
+            fetches[2].value.docs.forEach(function(d){ addOL(d, 25); }); // boost PT
+        if (fetches[3].status === 'fulfilled' && fetches[3].value.docs)
+            fetches[3].value.docs.forEach(function(d){ addOL(d, 0); });
     }
     results.sort(function(a, b) { return b._score - a._score; });
     return results;
@@ -3542,24 +3591,43 @@ async function _processCoverFile(file, opts) {
             progressBar.style.width = '60%';
             var bookInfo = _extractBookFromVision(vData);
 
-            if (bookInfo.query) {
+            if (bookInfo.query || bookInfo.ocrQuery || bookInfo.entityQuery) {
                 status.textContent = 'A pesquisar livro...';
-                var results = await _coverMultiSearch(bookInfo.query, bookInfo.title, bookInfo.author);
+
+                // Pesquisar em paralelo com query OCR (PT) + query entidades (EN) + page title
+                var queriesToTry = [bookInfo.ocrQuery, bookInfo.pageTitle ? (bookInfo.pageTitle + ' ' + bookInfo.pageAuthor).trim() : null, bookInfo.entityQuery]
+                    .filter(Boolean).filter(function(q,i,a){ return a.indexOf(q)===i; });
+                var primaryQuery = queriesToTry[0] || bookInfo.query;
+
+                var allResults = [], seenK = new Set();
+                var searchPromises = queriesToTry.map(function(q) {
+                    return _coverMultiSearch(q, bookInfo.title, bookInfo.author);
+                });
+                var settled = await Promise.allSettled(searchPromises);
+                settled.forEach(function(s) {
+                    if (s.status === 'fulfilled') {
+                        s.value.forEach(function(r) {
+                            var k = r.source + ':' + (r.source==='gb' ? (r.item.volumeInfo.title||'')+'|'+((r.item.volumeInfo.authors||[]).join(',')) : (r.doc.key||r.doc.title));
+                            if (!seenK.has(k)) { seenK.add(k); allResults.push(r); }
+                        });
+                    }
+                });
+                allResults.sort(function(a,b){ return b._score - a._score; });
+
                 progressBar.style.width = '100%';
                 await new Promise(function(r){ setTimeout(r, 250); });
                 overlay.classList.remove('visible');
                 URL.revokeObjectURL(imgUrl);
 
-                if (results.length > 0) {
-                    _renderCoverResults(results, bookInfo.query, opts);
+                if (allResults.length > 0) {
+                    _renderCoverResults(allResults, primaryQuery, opts);
                 } else {
-                    // Vision identificou texto mas não encontrou no Google Books — mostrar UI de edição
                     showCoverEditUI(bookInfo.title, bookInfo.author, URL.createObjectURL(file), opts);
                 }
                 return;
             }
 
-            // Vision correu mas não extraiu info — usar o texto OCR do Vision como fallback
+            // Vision correu mas não extraiu info — mostrar UI manual
             if (vData.text) {
                 var vLines = vData.text.split('\n').filter(function(l){ return l.trim().length > 2; });
                 progressBar.style.width = '100%';
