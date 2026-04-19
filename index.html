@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 13, em 19.04.2026</span>
+                <span class="header-version">Versão 14, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -970,9 +970,11 @@
 <!-- BARCODE SCANNER -->
 <div class="scanner-modal" id="scannerModal">
     <button class="scanner-close" onclick="closeScanner()">&times;</button>
+    <button id="scannerTorchBtn" onclick="toggleScannerTorch()" title="Ligar/desligar lanterna"
+        style="display:none;position:absolute;top:15px;left:15px;background:rgba(255,255,255,0.2);border:none;color:white;width:44px;height:44px;border-radius:50%;font-size:1.3em;cursor:pointer;z-index:10;align-items:center;justify-content:center;">🔦</button>
     <div class="scanner-header">
         <h3>Scanner de Codigo de Barras</h3>
-        <p>Aponta a camera para o codigo de barras (ISBN) do livro</p>
+        <p>Aponta para o codigo de barras (ISBN) na parte de baixo do livro</p>
     </div>
     <div id="scannerView"></div>
     <div class="scanner-result" id="scannerResult"></div>
@@ -2276,16 +2278,9 @@ function isbnVariants(isbn) {
 async function searchByISBN(isbn, rd) {
     var normalized = normalizeISBN(isbn);
 
-    // Validar checksum primeiro
+    // Avisar se checksum invalido, mas tentar na mesma (muitos livros PT têm ISBN com erro)
     if (!isValidISBN(normalized)) {
-        rd.innerHTML =
-            '<div class="api-loading" style="color:var(--warning);">ISBN invalido (checksum nao confere).<br>' +
-            '<span style="font-size:0.8em;">Lido: ' + esc(normalized) + '</span></div>' +
-            '<div style="padding:10px;text-align:center;">' +
-                '<input type="text" id="isbnManual" value="' + esc(normalized) + '" placeholder="Corrige o ISBN" style="width:100%;padding:10px;margin-bottom:8px;">' +
-                '<button class="btn btn-accent btn-sm" onclick="retryISBN()">Tentar mesmo assim</button>' +
-            '</div>';
-        return;
+        rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>ISBN com checksum incorreto, a tentar mesmo assim... <span style="font-size:0.8em;opacity:0.7;">(' + esc(normalized) + ')</span></div>';
     }
 
     // Gerar variantes (ISBN-10 e ISBN-13 se aplicavel)
@@ -2342,12 +2337,32 @@ async function searchByISBN(isbn, rd) {
     }
 
     if (found.length === 0) {
+        // Ultimo recurso: pesquisar o ISBN como texto livre no Google Books
+        // (alguns livros PT nao estao indexados por ISBN mas estao por texto)
+        rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>ISBN nao encontrado nas bases de dados, a tentar pesquisa alternativa...</div>';
+        try {
+            var _altSig = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
+            var _altRes = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(normalized) + '&maxResults=5&langRestrict=pt', { signal: _altSig });
+            var _altData = await _altRes.json();
+            if (_altData.items && _altData.items.length > 0) {
+                await selectGoogleBook(_altData.items[0]);
+                return;
+            }
+            // Sem langRestrict como ultimo fallback
+            var _altRes2 = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(normalized) + '&maxResults=3', { signal: _altSig });
+            var _altData2 = await _altRes2.json();
+            if (_altData2.items && _altData2.items.length > 0) {
+                await selectGoogleBook(_altData2.items[0]);
+                return;
+            }
+        } catch(e) {}
+
         rd.innerHTML =
             '<div class="api-loading" style="color:var(--warning);">ISBN ' + esc(normalized) + ' nao encontrado.<br>' +
-            '<span style="font-size:0.8em;">Experimenta pesquisar pelo titulo do livro.</span></div>' +
+            '<span style="font-size:0.8em;">Tenta pesquisar pelo titulo do livro.</span></div>' +
             '<div style="padding:10px;text-align:center;">' +
-                '<input type="text" id="isbnManual" value="' + esc(normalized) + '" placeholder="Corrige o ISBN ou usa titulo" style="width:100%;padding:10px;margin-bottom:8px;">' +
-                '<button class="btn btn-accent btn-sm" onclick="retryISBN()">Tentar novamente</button>' +
+                '<input type="text" id="isbnManual" value="' + esc(normalized) + '" placeholder="Corrige o ISBN ou escreve o titulo" style="width:100%;padding:10px;margin-bottom:8px;">' +
+                '<button class="btn btn-accent btn-sm" onclick="retryISBN()">Pesquisar</button>' +
             '</div>';
         return;
     }
@@ -2471,10 +2486,11 @@ async function fillFromOLSearch(doc, isbn, rd) {
 
 // ---- TITULO ----
 async function searchByTitle(query, rd) {
-    // Pesquisar em ambas as APIs em paralelo
+    // Pesquisar em paralelo: Open Library (PT), Google Books (PT), Google Books (geral)
     var results = await Promise.allSettled([
         fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(query) + '&language=por&limit=10').then(function(r){return r.json();}),
-        fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=8&orderBy=relevance').then(function(r){return r.json();})
+        fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=8&orderBy=relevance&langRestrict=pt').then(function(r){return r.json();}),
+        fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=6&orderBy=relevance').then(function(r){return r.json();})
     ]);
 
     var olDocs = [];
@@ -2483,10 +2499,16 @@ async function searchByTitle(query, rd) {
     if (results[0].status === 'fulfilled' && results[0].value.docs) {
         olDocs = results[0].value.docs;
     }
-    if (results[1].status === 'fulfilled' && results[1].value.items) {
-        gbItems = results[1].value.items;
-    }
-
+    // Mesclar resultados GB (PT primeiro, depois geral, sem duplicados)
+    var gbSeen = new Set();
+    [results[1], results[2]].forEach(function(r) {
+        if (r.status === 'fulfilled' && r.value.items) {
+            r.value.items.forEach(function(item) {
+                var key = (item.volumeInfo.title || '').toLowerCase() + '|' + (item.volumeInfo.authors || []).join(',').toLowerCase();
+                if (!gbSeen.has(key)) { gbSeen.add(key); gbItems.push(item); }
+            });
+        }
+    });
     if (olDocs.length === 0 && gbItems.length === 0) {
         rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado. Tenta pesquisar pelo ISBN do livro para resultados mais precisos.</div>';
         return;
@@ -3072,7 +3094,16 @@ function openCoverScanner() {
 // Tentar detectar ISBN/codigo de barras numa imagem estatica (verso do livro)
 // Usa BarcodeDetector nativo (iOS17+, Chrome) ou html5-qrcode como fallback
 async function detectBarcodeInImage(file) {
-    // Estrategia 1: BarcodeDetector API nativa (rapida, precisa)
+    function _extractISBN(rawValue) {
+        var raw = normalizeISBN(rawValue);
+        if (raw.length === 13 && (raw.startsWith('978') || raw.startsWith('979'))) return raw;
+        if (raw.length === 13 && isValidISBN13(raw)) return raw;
+        if (raw.length === 10 && isValidISBN10(raw)) return raw;
+        if (/^\d{13}$/.test(raw)) return raw;
+        return null;
+    }
+
+    // Estrategia 1: BarcodeDetector API nativa
     if ('BarcodeDetector' in window) {
         try {
             var supportedFmts = await window.BarcodeDetector.getSupportedFormats();
@@ -3081,15 +3112,38 @@ async function detectBarcodeInImage(file) {
             });
             if (isbnFmts.length > 0) {
                 var bd = new window.BarcodeDetector({ formats: isbnFmts });
+
+                // 1a: imagem original
                 var bitmap = await createImageBitmap(file);
                 var codes = await bd.detect(bitmap);
                 bitmap.close();
                 for (var i = 0; i < codes.length; i++) {
-                    var raw = normalizeISBN(codes[i].rawValue);
-                    if (raw.length === 13 && (raw.startsWith('978') || raw.startsWith('979'))) return raw;
-                    if (raw.length === 13 && isValidISBN13(raw)) return raw;
-                    if (raw.length === 10 && isValidISBN10(raw)) return raw;
-                    if (/^\d{13}$/.test(raw)) return raw; // EAN-13 sem validacao de checksum
+                    var r1 = _extractISBN(codes[i].rawValue);
+                    if (r1) return r1;
+                }
+
+                // 1b: imagem com contraste alto + binarizacao (ajuda em fotos com sombra)
+                var enhanced = await _enhanceForBarcode(file);
+                if (enhanced) {
+                    var bitmap2 = await createImageBitmap(enhanced);
+                    var codes2 = await bd.detect(bitmap2);
+                    bitmap2.close();
+                    for (var j = 0; j < codes2.length; j++) {
+                        var r2 = _extractISBN(codes2[j].rawValue);
+                        if (r2) return r2;
+                    }
+                }
+
+                // 1c: imagem invertida (codigo de barras com fundo claro)
+                var inverted = await _enhanceForBarcode(file, true);
+                if (inverted) {
+                    var bitmap3 = await createImageBitmap(inverted);
+                    var codes3 = await bd.detect(bitmap3);
+                    bitmap3.close();
+                    for (var k = 0; k < codes3.length; k++) {
+                        var r3 = _extractISBN(codes3[k].rawValue);
+                        if (r3) return r3;
+                    }
                 }
             }
         } catch(e) { console.warn('BarcodeDetector imagem:', e); }
@@ -3097,36 +3151,77 @@ async function detectBarcodeInImage(file) {
 
     // Estrategia 2: html5-qrcode scanFileV2 (fallback JS)
     if (typeof Html5Qrcode !== 'undefined') {
-        var tmpId = '__isbn_tmp_' + Date.now();
-        var tmpEl = document.createElement('div');
-        tmpEl.id = tmpId;
-        tmpEl.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:1px;height:1px;overflow:hidden;';
-        document.body.appendChild(tmpEl);
-        try {
-            var tmpScanner = new Html5Qrcode(tmpId, { verbose: false });
-            var scanRes = await tmpScanner.scanFileV2(file, false);
-            try { tmpScanner.clear(); } catch(e) {}
-            try { tmpEl.remove(); } catch(e) {}
-            if (scanRes && scanRes.decodedText) {
-                var isbn = normalizeISBN(scanRes.decodedText);
-                if (isbn.length >= 10) return isbn;
-            }
-        } catch(e) {
-            try { tmpEl.remove(); } catch(ee) {}
+        var _tryHtml5Qr = async function(fileOrBlob, label) {
+            var tmpId = '__isbn_tmp_' + Date.now();
+            var tmpEl = document.createElement('div');
+            tmpEl.id = tmpId;
+            tmpEl.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:1px;height:1px;overflow:hidden;';
+            document.body.appendChild(tmpEl);
+            try {
+                var sc = new Html5Qrcode(tmpId, { verbose: false });
+                var res = await sc.scanFileV2(fileOrBlob instanceof File ? fileOrBlob : new File([fileOrBlob], label + '.png', { type: 'image/png' }), false);
+                try { sc.clear(); } catch(e) {}
+                tmpEl.remove();
+                if (res && res.decodedText) {
+                    var r = _extractISBN(res.decodedText);
+                    if (r) return r;
+                }
+            } catch(e) { try { tmpEl.remove(); } catch(ee) {} }
+            return null;
+        };
+
+        var r2a = await _tryHtml5Qr(file, 'orig');
+        if (r2a) return r2a;
+
+        var enh2 = await _enhanceForBarcode(file);
+        if (enh2) {
+            var r2b = await _tryHtml5Qr(enh2, 'enh');
+            if (r2b) return r2b;
         }
     }
     return null;
 }
 
-// Pre-processar imagem para OCR: resize, greyscale, contraste, auto-inversao em capas escuras
-async function preprocessCoverImage(file) {
+// Melhorar imagem para detecao de codigo de barras: ampliar + binarizar
+async function _enhanceForBarcode(file, invert) {
+    return new Promise(function(resolve) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function() {
+            URL.revokeObjectURL(url);
+            var canvas = document.createElement('canvas');
+            var scale = Math.max(1, Math.min(2400 / Math.max(img.width, img.height), 3));
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var d = imgData.data;
+            for (var i = 0; i < d.length; i += 4) {
+                var g = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+                g = g > 120 ? 255 : 0;
+                if (invert) g = 255 - g;
+                d[i] = d[i+1] = d[i+2] = g;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            canvas.toBlob(function(blob) { resolve(blob); }, 'image/png');
+        };
+        img.onerror = function() { resolve(null); };
+        img.src = url;
+    });
+}
+
+// Pre-processar imagem para OCR — estrategia escolhida com base no brilho medio da capa
+async function preprocessCoverImage(file, strategy) {
+    // strategy: 'auto' (default), 'highcontrast', 'binarize'
     return new Promise(function(resolve, reject) {
         var img = new Image();
+        var _url = URL.createObjectURL(file);
         img.onload = function() {
+            URL.revokeObjectURL(_url);
             var canvas = document.createElement('canvas');
-            // Resolucao maior = OCR mais preciso
-            var MAX = 1800;
-            var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+            var MAX = 2000; // mais resolucao = OCR mais preciso em texto pequeno
+            var scale = Math.min(2, MAX / Math.max(img.width, img.height)); // permite ampliar ate 2x
             canvas.width = Math.round(img.width * scale);
             canvas.height = Math.round(img.height * scale);
             var ctx = canvas.getContext('2d');
@@ -3135,21 +3230,36 @@ async function preprocessCoverImage(file) {
             var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             var d = imgData.data;
 
-            // Calcular brilho medio para detetar capas escuras (texto branco em fundo escuro)
-            var totalBrightness = 0;
+            // Calcular brilho medio e desvio padrao para escolher estrategia
+            var totalBrightness = 0, n = d.length / 4;
             for (var i = 0; i < d.length; i += 4) {
                 totalBrightness += d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
             }
-            var avgBrightness = totalBrightness / (d.length / 4);
-            var isDarkCover = avgBrightness < 100; // capas escuras beneficiam de inversao
+            var avgBrightness = totalBrightness / n;
+            var isDarkCover = avgBrightness < 110;
 
-            var contrast = 1.6;
-            var intercept = 128 * (1 - contrast);
+            var strat = strategy || 'auto';
+
             for (var j = 0; j < d.length; j += 4) {
                 var g = d[j] * 0.299 + d[j+1] * 0.587 + d[j+2] * 0.114;
-                g = g * contrast + intercept;
-                g = Math.max(0, Math.min(255, g));
-                if (isDarkCover) g = 255 - g; // inverter para texto escuro em fundo branco
+
+                if (strat === 'binarize') {
+                    // Binarizacao dura: fundo branco + texto preto (melhor para texto muito decorativo)
+                    var thresh = isDarkCover ? 100 : 150;
+                    g = isDarkCover ? (g < thresh ? 255 : 0) : (g > thresh ? 255 : 0);
+                } else if (strat === 'highcontrast') {
+                    // Contraste muito alto para texto em fundos texturados
+                    g = g * 2.4 + 128 * (1 - 2.4);
+                    g = Math.max(0, Math.min(255, g));
+                    if (isDarkCover) g = 255 - g;
+                } else {
+                    // 'auto': contraste moderado + inversao se necessario
+                    var contrast = isDarkCover ? 1.8 : 1.6;
+                    g = g * contrast + 128 * (1 - contrast);
+                    g = Math.max(0, Math.min(255, g));
+                    if (isDarkCover) g = 255 - g;
+                }
+
                 d[j] = d[j+1] = d[j+2] = g;
             }
             ctx.putImageData(imgData, 0, 0);
@@ -3159,7 +3269,7 @@ async function preprocessCoverImage(file) {
             }, 'image/jpeg', 0.93);
         };
         img.onerror = reject;
-        img.src = URL.createObjectURL(file);
+        img.src = _url;
     });
 }
 
@@ -3241,43 +3351,57 @@ async function handleCoverScan(event) {
     }
 
     try {
-        status.textContent = 'A optimizar imagem para OCR...';
-        progressBar.style.width = '25%';
-        var processed = await preprocessCoverImage(file);
-        progressBar.style.width = '30%';
-
-        status.textContent = 'A ler texto da capa...';
-        var result = await Tesseract.recognize(processed.dataUrl, 'por+eng', {
-            logger: function(m) {
-                if (m.status === 'recognizing text') {
-                    var pct = Math.round(m.progress * 65) + 30;
-                    progressBar.style.width = pct + '%';
-                    status.textContent = 'A ler texto... ' + Math.round(pct) + '%';
+        var _ocrPass = async function(strategy, labelPct, basePct) {
+            status.textContent = 'A optimizar imagem (' + strategy + ')...';
+            progressBar.style.width = basePct + '%';
+            var processed = await preprocessCoverImage(file, strategy);
+            status.textContent = 'A ler texto da capa...';
+            var result = await Tesseract.recognize(processed.dataUrl, 'por+eng', {
+                tessedit_pageseg_mode: '6',   // bloco uniforme de texto — bom para titulos
+                tessedit_ocr_engine_mode: '1', // LSTM neural network
+                logger: function(m) {
+                    if (m.status === 'recognizing text') {
+                        var pct = Math.round(m.progress * labelPct) + basePct;
+                        progressBar.style.width = Math.min(pct, 95) + '%';
+                        status.textContent = 'A ler texto... ' + Math.round(m.progress * 100) + '%';
+                    }
                 }
-            }
-        });
+            });
+            var tesLines = result.data.lines || [];
+            var confidentText = tesLines
+                .filter(function(l) { return l.confidence >= 25 && l.text.trim().length >= 3; })
+                .map(function(l) { return l.text.trim(); })
+                .join('\n');
+            return { text: confidentText || (result.data.text || '').trim(), lines: tesLines };
+        };
 
-        progressBar.style.width = '100%';
+        // Passe 1: estrategia 'auto' (contraste moderado + inversao para capas escuras)
+        progressBar.style.width = '25%';
+        var pass1 = await _ocrPass('auto', 35, 25);
+        var lines1 = cleanOcrLines(pass1.text);
 
-        // Usar dados de confianca por linha (muito mais preciso que texto bruto)
-        var tesLines = result.data.lines || [];
-        var confidentText = tesLines
-            .filter(function(l) { return l.confidence >= 30 && l.text.trim().length >= 3; })
-            .map(function(l) { return l.text.trim(); })
-            .join('\n');
-        var rawText = confidentText || (result.data.text || '').trim();
+        var allLines = lines1.slice();
 
-        console.log('OCR raw (filtrado):', rawText);
-
-        var lines = cleanOcrLines(rawText);
-        console.log('OCR linhas limpas:', lines);
-
-        // Pontuar e ordenar
-        if (lines.length > 0) {
-            lines.sort(function(a, b) { return scoreTitleLine(b) - scoreTitleLine(a); });
+        // Passe 2: estrategia 'highcontrast' — so se passe 1 deu poucos resultados
+        if (lines1.length < 3) {
+            progressBar.style.width = '63%';
+            try {
+                var pass2 = await _ocrPass('highcontrast', 30, 63);
+                var lines2 = cleanOcrLines(pass2.text);
+                // Juntar linhas unicas dos dois passes
+                var seen = new Set(allLines.map(function(l) { return l.toLowerCase(); }));
+                lines2.forEach(function(l) { if (!seen.has(l.toLowerCase())) { allLines.push(l); seen.add(l.toLowerCase()); } });
+            } catch(e2) { console.warn('OCR passe 2 falhou:', e2); }
         }
 
-        showCoverEditUI(lines, rawText, imgUrl);
+        progressBar.style.width = '100%';
+        console.log('OCR linhas combinadas:', allLines);
+
+        if (allLines.length > 0) {
+            allLines.sort(function(a, b) { return scoreTitleLine(b) - scoreTitleLine(a); });
+        }
+
+        showCoverEditUI(allLines, pass1.text, imgUrl);
 
     } catch(e) {
         console.error('Erro OCR:', e);
@@ -3553,11 +3677,26 @@ async function openScanner() {
     // Fechar qualquer scanner anterior
     await closeScanner();
 
+    _scannerTorchOn = false;
+    var torchBtn = document.getElementById('scannerTorchBtn');
+    if (torchBtn) torchBtn.style.display = 'none';
+
     // Pedir permissao de camera
     try {
         _nativeScannerStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920, min: 640 }, height: { ideal: 1080, min: 480 } }
         });
+        // Ativar autofocus continuo se disponivel
+        try {
+            var _vt = _nativeScannerStream.getVideoTracks()[0];
+            if (_vt && _vt.getCapabilities) {
+                var _caps = _vt.getCapabilities();
+                var _adv = {};
+                if (_caps.focusMode && _caps.focusMode.indexOf('continuous') >= 0) _adv.focusMode = 'continuous';
+                if (Object.keys(_adv).length) await _vt.applyConstraints({ advanced: [_adv] });
+                if (_caps.torch) { if (torchBtn) { torchBtn.style.display = 'flex'; } }
+            }
+        } catch(e) {}
     } catch(permErr) {
         console.error('Permissao camera negada:', permErr);
         resultDiv.innerHTML =
@@ -3808,6 +3947,27 @@ async function closeScanner() {
             v.srcObject.getTracks().forEach(function(t) { t.stop(); });
         }
     });
+}
+
+var _scannerTorchOn = false;
+async function toggleScannerTorch() {
+    var track = null;
+    if (_nativeScannerStream) {
+        track = _nativeScannerStream.getVideoTracks()[0];
+    } else {
+        var _vid = document.querySelector('#scannerView video');
+        if (_vid && _vid.srcObject) track = _vid.srcObject.getVideoTracks()[0];
+    }
+    if (!track) return;
+    _scannerTorchOn = !_scannerTorchOn;
+    try {
+        await track.applyConstraints({ advanced: [{ torch: _scannerTorchOn }] });
+        var btn = document.getElementById('scannerTorchBtn');
+        if (btn) {
+            btn.textContent = _scannerTorchOn ? '💡' : '🔦';
+            btn.style.background = _scannerTorchOn ? 'rgba(255,220,0,0.5)' : 'rgba(255,255,255,0.2)';
+        }
+    } catch(e) { console.warn('Torch:', e); }
 }
 
 // ============ BATCH SCANNER ============
