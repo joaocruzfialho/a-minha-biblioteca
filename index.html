@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 21, em 19.04.2026</span>
+                <span class="header-version">Versão 22, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -2878,17 +2878,6 @@ function fillForm(d) {
 function dismissOnboarding() { document.getElementById('onboarding').style.display = 'none'; localStorage.setItem('onboarded', '1'); }
 (function(){ if (!localStorage.getItem('onboarded') && library.length === 0) document.getElementById('onboarding').style.display = 'block'; })();
 
-// ============ BACKUP REMINDER ============
-(function(){
-    const last = localStorage.getItem('lastBackup');
-    const days = last ? Math.floor((Date.now() - parseInt(last)) / 86400000) : null;
-    if ((days === null || days > 60) && library.length > 10) {
-        const msg = days === null
-            ? 'Ainda não fizeste backup! Exporta os teus dados para não os perderes.'
-            : 'Já passaram ' + days + ' dias sem backup. Exporta os teus dados!';
-        setTimeout(() => showToast(msg, 'warning'), 3000);
-    }
-})();
 function markBackup() { localStorage.setItem('lastBackup', Date.now()); }
 
 // ============ COMMAND PALETTE ============
@@ -3380,22 +3369,55 @@ function _extractBookFromVision(data) {
     var bookSites = /goodreads|amazon|fnac|bertrand|wook|saraiva|cultura|livraria|wikipedia|worldcat|bookdepository|thriftbooks|abebooks|librarything/i;
     var isPersonName = function(s) { return /^[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+(\s+[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+)+$/.test(s.trim()); };
     var publisherNoise = /\b(editora|editor[ae]s?|publishers?|press|leya|bertrand|gradiva|presença|dom quixote|caminho|porto editora|planeta|objectiva|quetzal|manuscrito|companhia|penguin|random house|harpercollins)\b/i;
+    var marketingNoise = /\b(bestseller|best.seller|new york times|wall street journal|financial times|guardian|telegraph|sunday|million|milh[oõ]es?|endorsement|praise|blurb|sobre o autor|about the author|elogios|mais vendido|n[oº]\.?\s*1|#1)\b/i;
 
-    // FONTE PRIMÁRIA: texto OCR da Vision — está em PORTUGUÊS, directamente da capa
-    if (data.text) {
+    // FONTE PRIMÁRIA: blocos de texto com bounding boxes — ordenados por altura (letra maior = título)
+    // data.blocks vem da API ordenado por h descendente (bloco com letra maior = primeiro)
+    if (data.blocks && data.blocks.length > 0) {
+        var meaningfulBlocks = data.blocks.filter(function(b) {
+            var t = b.text.trim();
+            return t.length > 1 && !publisherNoise.test(t) && !marketingNoise.test(t) && t.length < 120;
+        });
+
+        // Título: primeiro bloco significativo por altura de fonte
+        var titleBlock = meaningfulBlocks[0];
+        if (titleBlock) {
+            title = titleBlock.text.trim().replace(/\s+/g, ' ');
+            // Se o bloco de título parece um nome de autor, tentar o próximo como título
+            if (isPersonName(title) && meaningfulBlocks.length > 1) {
+                author = title;
+                title = meaningfulBlocks[1].text.trim().replace(/\s+/g, ' ');
+            }
+        }
+
+        // Autor: bloco com padrão de nome próprio (diferente do título)
+        if (!author) {
+            for (var bi = 0; bi < Math.min(meaningfulBlocks.length, 8); bi++) {
+                var bt = meaningfulBlocks[bi].text.trim().replace(/\s+/g, ' ');
+                if (bt !== title && isPersonName(bt)) { author = bt; break; }
+            }
+        }
+
+        // Query OCR: título (max 6 palavras) + autor
+        var titleWords = title.split(/\s+/).slice(0, 6).join(' ');
+        ocrQuery = (titleWords + (author ? ' ' + author : '')).trim();
+    }
+
+    // FALLBACK: texto OCR plano (se não houve blocos)
+    if (!ocrQuery && data.text) {
         var ocrLines = data.text.split('\n')
             .map(function(l) { return l.trim().replace(/\s+/g,' '); })
             .filter(function(l) {
                 return l.length > 2 && /[a-zA-ZÀ-ÿ]{2}/.test(l) &&
-                       !/^\d[\d\s\-]*$/.test(l) &&        // ignorar só números
-                       !publisherNoise.test(l) &&          // ignorar editoras
+                       !publisherNoise.test(l) && !marketingNoise.test(l) &&
                        l.length < 80;
             });
         if (ocrLines.length > 0) {
-            title = ocrLines[0];
-            // Detectar autor: linha com nome próprio (2+ palavras capitalizadas)
-            for (var oi = 1; oi < Math.min(ocrLines.length, 5); oi++) {
-                if (isPersonName(ocrLines[oi])) { author = ocrLines[oi]; break; }
+            if (!title) title = ocrLines[0];
+            if (!author) {
+                for (var oi = 1; oi < Math.min(ocrLines.length, 5); oi++) {
+                    if (isPersonName(ocrLines[oi])) { author = ocrLines[oi]; break; }
+                }
             }
             ocrQuery = ocrLines.slice(0, 3).join(' ');
         }

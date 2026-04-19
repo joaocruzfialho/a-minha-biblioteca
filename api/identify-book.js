@@ -47,7 +47,7 @@ export default async function handler(req, res) {
                 requests: [{
                     image: { content: imageBase64 },
                     features: [
-                        { type: 'TEXT_DETECTION', maxResults: 1 },
+                        { type: 'DOCUMENT_TEXT_DETECTION' },
                         { type: 'WEB_DETECTION', maxResults: 15 },
                     ]
                 }]
@@ -63,7 +63,27 @@ export default async function handler(req, res) {
         const r = data.responses?.[0];
         if (!r) return res.status(500).json({ error: 'Empty Vision response' });
 
-        const text = r.textAnnotations?.[0]?.description || '';
+        const text = r.fullTextAnnotation?.text || r.textAnnotations?.[0]?.description || '';
+
+        // Extrair blocos de texto com tamanho (bounding box) — permite identificar o título
+        // pelo tamanho da fonte em vez da ordem de aparecimento
+        const blocks = [];
+        for (const page of (r.fullTextAnnotation?.pages || [])) {
+            for (const block of (page.blocks || [])) {
+                const verts = block.boundingBox?.vertices || [];
+                if (verts.length < 4) continue;
+                const h = Math.abs((verts[2]?.y || 0) - (verts[0]?.y || 0));
+                const w = Math.abs((verts[1]?.x || 0) - (verts[0]?.x || 0));
+                const blockText = (block.paragraphs || [])
+                    .flatMap(p => (p.words || []).map(w2 =>
+                        (w2.symbols || []).map(s => s.text).join('')
+                    )).join(' ').trim();
+                if (blockText.length > 1) blocks.push({ text: blockText, h, w, y: verts[0]?.y || 0 });
+            }
+        }
+        // Ordenar por altura de bloco (letra maior = título)
+        blocks.sort((a, b) => b.h - a.h);
+
         const webEntities = (r.webDetection?.webEntities || [])
             .filter(e => e.score > 0.35 && e.description && !GENERIC.has(e.description.toLowerCase()))
             .sort((a, b) => b.score - a.score)
@@ -73,7 +93,7 @@ export default async function handler(req, res) {
             ...(r.webDetection?.partialMatchingImages || []).map(p => ({ url: p.url, pageTitle: '' }))
         ].slice(0, 10).map(p => ({ url: p.url || '', title: p.pageTitle || '' }));
 
-        return res.status(200).json({ text, webEntities, webPages });
+        return res.status(200).json({ text, blocks: blocks.slice(0, 20), webEntities, webPages });
 
     } catch (e) {
         return res.status(500).json({ error: e.message });
