@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 14, em 19.04.2026</span>
+                <span class="header-version">Versão 15, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -3668,23 +3668,23 @@ async function openScanner() {
         form.classList.add('visible');
     }
 
+    // Fechar qualquer scanner anterior (antes de mostrar o modal — closeScanner() remove .visible)
+    await closeScanner();
+
     var modal = document.getElementById('scannerModal');
     var resultDiv = document.getElementById('scannerResult');
     resultDiv.innerHTML = '<p style="color:white;">A iniciar camera...</p>';
     modal.classList.add('visible');
     scannerProcessing = false;
 
-    // Fechar qualquer scanner anterior
-    await closeScanner();
-
     _scannerTorchOn = false;
     var torchBtn = document.getElementById('scannerTorchBtn');
     if (torchBtn) torchBtn.style.display = 'none';
 
-    // Pedir permissao de camera
+    // Pedir permissao de camera (sem min: para nao falhar em iOS/dispositivos antigos)
     try {
         _nativeScannerStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920, min: 640 }, height: { ideal: 1080, min: 480 } }
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
         });
         // Ativar autofocus continuo se disponivel
         try {
