@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 22, em 19.04.2026</span>
+                <span class="header-version">Versão 23, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -2397,9 +2397,16 @@ async function searchByISBN(isbn, rd) {
     }
 
     if (found.length === 0) {
-        // Ultimo recurso: pesquisar o ISBN como texto livre no Google Books
-        // (alguns livros PT nao estao indexados por ISBN mas estao por texto)
         rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>ISBN nao encontrado nas bases de dados, a tentar pesquisa alternativa...</div>';
+        try {
+            // Tentar lojas PT com o ISBN
+            var _ptRes = await fetch('/api/search-pt?q=' + encodeURIComponent(normalized));
+            var _ptData = await _ptRes.json();
+            if (_ptData.results && _ptData.results.length > 0) {
+                await selectPTResult(_ptData.results[0]);
+                return;
+            }
+        } catch(_) {}
         try {
             var _altSig = AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
             var _altRes = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(normalized) + '&maxResults=5&langRestrict=pt', { signal: _altSig });
@@ -2408,7 +2415,6 @@ async function searchByISBN(isbn, rd) {
                 await selectGoogleBook(_altData.items[0]);
                 return;
             }
-            // Sem langRestrict como ultimo fallback
             var _altRes2 = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(normalized) + '&maxResults=3', { signal: _altSig });
             var _altData2 = await _altRes2.json();
             if (_altData2.items && _altData2.items.length > 0) {
@@ -2546,22 +2552,25 @@ async function fillFromOLSearch(doc, isbn, rd) {
 
 // ---- TITULO ----
 async function searchByTitle(query, rd) {
-    // Pesquisar em paralelo: Open Library (PT), Google Books (PT), Google Books (geral)
+    // Pesquisar em paralelo: Wook/Bertrand + Open Library (PT) + Google Books (PT) + Google Books (geral)
     var results = await Promise.allSettled([
+        fetch('/api/search-pt?q=' + encodeURIComponent(query)).then(function(r){return r.json();}),
         fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(query) + '&language=por&limit=10').then(function(r){return r.json();}),
         fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=8&orderBy=relevance&langRestrict=pt').then(function(r){return r.json();}),
         fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(query) + '&maxResults=6&orderBy=relevance').then(function(r){return r.json();})
     ]);
 
+    var ptBooks = [];
     var olDocs = [];
     var gbItems = [];
 
-    if (results[0].status === 'fulfilled' && results[0].value.docs) {
-        olDocs = results[0].value.docs;
-    }
+    if (results[0].status === 'fulfilled' && results[0].value.results)
+        ptBooks = results[0].value.results;
+    if (results[1].status === 'fulfilled' && results[1].value.docs)
+        olDocs = results[1].value.docs;
     // Mesclar resultados GB (PT primeiro, depois geral, sem duplicados)
     var gbSeen = new Set();
-    [results[1], results[2]].forEach(function(r) {
+    [results[2], results[3]].forEach(function(r) {
         if (r.status === 'fulfilled' && r.value.items) {
             r.value.items.forEach(function(item) {
                 var key = (item.volumeInfo.title || '').toLowerCase() + '|' + (item.volumeInfo.authors || []).join(',').toLowerCase();
@@ -2569,7 +2578,7 @@ async function searchByTitle(query, rd) {
             });
         }
     });
-    if (olDocs.length === 0 && gbItems.length === 0) {
+    if (ptBooks.length === 0 && olDocs.length === 0 && gbItems.length === 0) {
         rd.innerHTML =
             '<div class="api-loading" style="color:var(--warning);">Sem resultados para <em>' + esc(query) + '</em>.<br><span style="font-size:0.82em;opacity:0.8;">Tenta pelo ISBN, pelo titulo original ou em inglês.</span></div>' +
             '<div style="padding:10px;text-align:center;"><button class="btn btn-outline btn-sm" onclick="document.getElementById(\'title\').value=document.getElementById(\'apiQuery\').value.trim();document.getElementById(\'apiResults\').classList.remove(\'visible\');document.getElementById(\'title\').focus();showToast(\'Preenche os campos manualmente e guarda.\',\'info\');">✏️ Adicionar manualmente</button></div>';
@@ -2578,7 +2587,7 @@ async function searchByTitle(query, rd) {
 
     rd.innerHTML = '';
 
-    var _totalResults = olDocs.length + gbItems.length;
+    var _totalResults = ptBooks.length + olDocs.length + gbItems.length;
     if (_totalResults > 0) {
         var _rHdr = document.createElement('div');
         _rHdr.style.cssText = 'padding:5px 10px;font-size:0.78em;color:var(--text-muted);border-bottom:1px solid var(--border);';
@@ -2586,7 +2595,12 @@ async function searchByTitle(query, rd) {
         rd.appendChild(_rHdr);
     }
 
-    // Mostrar resultados Open Library primeiro (melhores para PT)
+    // Mostrar resultados lojas PT primeiro (melhores para livros portugueses)
+    ptBooks.forEach(function(book) {
+        rd.appendChild(buildPTResultItem(book));
+    });
+
+    // Mostrar resultados Open Library (melhores para PT)
     olDocs.forEach(function(doc) {
         var coverId = doc.cover_i;
         var thumb = coverId ? 'https://covers.openlibrary.org/b/id/' + coverId + '-S.jpg' : '';
@@ -3476,7 +3490,7 @@ function _extractBookFromVision(data) {
     };
 }
 
-// Pesquisa multi-estratégia no Google Books + Open Library com a query da Vision
+// Pesquisa multi-estratégia: Wook/Bertrand (PT) + Google Books + Open Library
 async function _coverMultiSearch(query, hintTitle, hintAuthor) {
     var results = [], seenKeys = new Set();
 
@@ -3490,42 +3504,68 @@ async function _coverMultiSearch(query, hintTitle, hintAuthor) {
     var GB = 'https://www.googleapis.com/books/v1/volumes?orderBy=relevance&maxResults=6&q=';
     var OL = 'https://openlibrary.org/search.json?limit=5&q=';
 
-    for (var qi = 0; qi < queries.length && results.length < 12; qi++) {
+    var addPT = function(book) {
+        var k = 'pt:' + (book.isbn || (book.title + '|' + book.author).toLowerCase());
+        if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            var s = scoreMatch(book.title, [book.author], hintTitle||query, hintAuthor||'');
+            results.push({ source:'pt', book:book, _score: s + 60 }); // forte boost lojas PT
+        }
+    };
+    var addGB = function(item, ptBoost) {
+        var k = 'gb:' + (item.volumeInfo.title||'') + '|' + ((item.volumeInfo.authors||[]).join(','));
+        if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            var s = scoreMatch(item.volumeInfo.title, item.volumeInfo.authors, hintTitle||query, hintAuthor||'');
+            results.push({ source:'gb', item:item, _score: s + (ptBoost||0) });
+        }
+    };
+    var addOL = function(doc, ptBoost) {
+        var k = 'ol:' + (doc.key||doc.title);
+        if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            var s = scoreMatch(doc.title, doc.author_name, hintTitle||query, hintAuthor||'');
+            results.push({ source:'ol', doc:doc, _score: s + (ptBoost||0) });
+        }
+    };
+
+    // Pesquisa principal: Wook/Bertrand + GB + OL em paralelo
+    var primaryQ = queries[0];
+    var allFetches = await Promise.allSettled([
+        fetch('/api/search-pt?q=' + encodeURIComponent(primaryQ)).then(function(r){return r.json();}),
+        fetch(GB + encodeURIComponent(primaryQ) + '&langRestrict=pt').then(function(r){return r.json();}),
+        fetch(GB + encodeURIComponent(primaryQ)).then(function(r){return r.json();}),
+        fetch(OL + encodeURIComponent(primaryQ) + '&language=por').then(function(r){return r.json();}),
+        fetch(OL + encodeURIComponent(primaryQ)).then(function(r){return r.json();})
+    ]);
+
+    if (allFetches[0].status === 'fulfilled' && allFetches[0].value.results)
+        allFetches[0].value.results.forEach(function(b){ addPT(b); });
+    if (allFetches[1].status === 'fulfilled' && allFetches[1].value.items)
+        allFetches[1].value.items.forEach(function(i){ addGB(i, 30); });
+    if (allFetches[2].status === 'fulfilled' && allFetches[2].value.items)
+        allFetches[2].value.items.forEach(function(i){ addGB(i, 0); });
+    if (allFetches[3].status === 'fulfilled' && allFetches[3].value.docs)
+        allFetches[3].value.docs.forEach(function(d){ addOL(d, 25); });
+    if (allFetches[4].status === 'fulfilled' && allFetches[4].value.docs)
+        allFetches[4].value.docs.forEach(function(d){ addOL(d, 0); });
+
+    // Queries adicionais (sem PT store — já pesquisou)
+    for (var qi = 1; qi < queries.length && results.length < 12; qi++) {
         var q = queries[qi];
-        // Pesquisa primeiro em PT, depois sem restrição — prioriza livros portugueses
         var fetches = await Promise.allSettled([
             fetch(GB + encodeURIComponent(q) + '&langRestrict=pt').then(function(r){return r.json();}),
             fetch(GB + encodeURIComponent(q)).then(function(r){return r.json();}),
-            fetch(OL + encodeURIComponent(q) + '&language=por').then(function(r){return r.json();}),
-            fetch(OL + encodeURIComponent(q)).then(function(r){return r.json();})
+            fetch(OL + encodeURIComponent(q) + '&language=por').then(function(r){return r.json();})
         ]);
-
-        var addGB = function(item, ptBoost) {
-            var k = 'gb:' + (item.volumeInfo.title||'') + '|' + ((item.volumeInfo.authors||[]).join(','));
-            if (!seenKeys.has(k)) {
-                seenKeys.add(k);
-                var s = scoreMatch(item.volumeInfo.title, item.volumeInfo.authors, hintTitle||query, hintAuthor||'');
-                results.push({ source:'gb', item:item, _score: s + (ptBoost||0) });
-            }
-        };
-        var addOL = function(doc, ptBoost) {
-            var k = 'ol:' + (doc.key||doc.title);
-            if (!seenKeys.has(k)) {
-                seenKeys.add(k);
-                var s = scoreMatch(doc.title, doc.author_name, hintTitle||query, hintAuthor||'');
-                results.push({ source:'ol', doc:doc, _score: s + (ptBoost||0) });
-            }
-        };
-
         if (fetches[0].status === 'fulfilled' && fetches[0].value.items)
-            fetches[0].value.items.forEach(function(i){ addGB(i, 30); }); // boost PT
+            fetches[0].value.items.forEach(function(i){ addGB(i, 30); });
         if (fetches[1].status === 'fulfilled' && fetches[1].value.items)
             fetches[1].value.items.forEach(function(i){ addGB(i, 0); });
         if (fetches[2].status === 'fulfilled' && fetches[2].value.docs)
-            fetches[2].value.docs.forEach(function(d){ addOL(d, 25); }); // boost PT
-        if (fetches[3].status === 'fulfilled' && fetches[3].value.docs)
-            fetches[3].value.docs.forEach(function(d){ addOL(d, 0); });
+            fetches[2].value.docs.forEach(function(d){ addOL(d, 25); });
     }
+
     results.sort(function(a, b) { return b._score - a._score; });
     return results;
 }
@@ -3538,7 +3578,9 @@ function _renderCoverResults(results, queryText, opts) {
     rd.classList.add('visible');
     rd.innerHTML = '';
     results.slice(0, 12).forEach(function(r) {
-        rd.appendChild(r.source === 'ol' ? buildOLResultItem(r.doc) : buildGBResultItem(r.item));
+        if (r.source === 'pt') rd.appendChild(buildPTResultItem(r.book));
+        else if (r.source === 'ol') rd.appendChild(buildOLResultItem(r.doc));
+        else rd.appendChild(buildGBResultItem(r.item));
     });
     var isImport = _importQueue.length > 0 && _importIdx < _importQueue.length;
     if (isImport) {
@@ -4027,6 +4069,58 @@ function buildGBResultItem(item) {
     el.appendChild(info);
     el.addEventListener('click', function() { selectGoogleBook(item); });
     return el;
+}
+
+function buildPTResultItem(book) {
+    var el = document.createElement('div');
+    el.className = 'api-result-item';
+    if (book.cover) {
+        var img = document.createElement('img');
+        img.src = book.cover; img.alt = '';
+        img.onerror = function(){ this.outerHTML = '<div class="no-thumb">\uD83D\uDCD6</div>'; };
+        el.appendChild(img);
+    } else {
+        var nt = document.createElement('div');
+        nt.className = 'no-thumb'; nt.textContent = '\uD83D\uDCD6';
+        el.appendChild(nt);
+    }
+    var storeName = book.source === 'wook' ? 'Wook' : book.source === 'bertrand' ? 'Bertrand' : 'PT';
+    var info = document.createElement('div');
+    info.className = 'api-result-info';
+    info.innerHTML = '<div class="r-title">' + esc(book.title || '') + '</div>' +
+        '<div class="r-author">' + esc(book.author || 'Autor desconhecido') + '</div>' +
+        '<div class="r-year">' + (book.year ? book.year + ' · ' : '') + storeName + '</div>' +
+        (book.isbn ? '<div class="r-isbn">' + esc(book.isbn) + '</div>' : '');
+    el.appendChild(info);
+    el.addEventListener('click', function() { selectPTResult(book); });
+    return el;
+}
+
+async function selectPTResult(book) {
+    var rd = document.getElementById('apiResults');
+    rd.innerHTML = '<div class="api-loading"><span class="spinner"></span>A carregar dados...</div>';
+    // Se tem ISBN, tentar completar com Open Library ou Google Books
+    if (book.isbn) {
+        try {
+            var r1 = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + book.isbn + '&format=json&jscmd=data').then(function(r){return r.json();});
+            var olData = r1['ISBN:' + book.isbn];
+            if (olData) { await fillFromOLBibkey(olData, book.isbn, rd); return; }
+        } catch(_) {}
+        try {
+            var r2 = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + book.isbn + '&maxResults=1').then(function(r){return r.json();});
+            if (r2.items && r2.items.length > 0) { await selectGoogleBook(r2.items[0]); return; }
+        } catch(_) {}
+    }
+    // Usar dados diretos da loja
+    fillForm({
+        title: book.title || '', author: book.author || '',
+        cover: book.cover || '', publisher: book.publisher || '',
+        publisherMain: book.publisher || '',
+        year: book.year || '', isbn: book.isbn || '',
+        genre: 'Geral', language: 'Portugues'
+    });
+    rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Livro encontrado! Ajusta e guarda.</div>';
+    setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
 }
 
 // ============ BARCODE SCANNER ============

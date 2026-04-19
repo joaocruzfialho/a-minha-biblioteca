@@ -1,4 +1,4 @@
-const CACHE_NAME = 'biblioteca-v22';
+const CACHE_NAME = 'biblioteca-v23';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
