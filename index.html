@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 18, em 19.04.2026</span>
+                <span class="header-version">Versão 19, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -3352,83 +3352,133 @@ async function preprocessCoverImage(file, strategy) {
     });
 }
 
-// Limpar texto OCR: remove lixo comum em capas (editoras, ISBN, numeros, etc)
-function cleanOcrLines(rawText) {
-    var blacklist = /^(romance|ficcao|ficção|literatura|best.?seller|best.?vendas|premio|prémio|autor|author|por |translation|translated|edi[çc][aã]o|edition|volume|vol\.?|cap[ií]tulo|chapter|n[º°]|n\.?\s*\d+|p\.?\s*\d+|isbn|pages?)\b/i;
-    var publisherKeywords = /\b(editora|publishers?|publishing|books?|livros|press|ediciones|ltd|limited|inc\.?|company|publicações|publicacoes|asa|leya|bertrand|gradiva|presença|dom quixote|caminho|porto editora|temas e debates|planeta|objectiva|verso|kalandraka|boggas|booksmile|quetzal|relogio d.?agua|porto|ambar|nova fronteira|rocco|companhia das letras|penguin|random|harper|simon|schuster|houghton|mifflin|vintage|anchor)\b/i;
-    var allDigits = /^[\d\s\-.,:;'"()]+$/;
+// ============ IDENTIFICAÇÃO DE LIVRO POR CAPA (Google Cloud Vision API) ============
 
-    return rawText.split(/\r?\n/)
-        .map(function(l) { return l.trim().replace(/\s+/g, ' '); })
-        .filter(function(l) {
-            if (l.length < 3 || l.length > 80) return false;
-            if (allDigits.test(l)) return false;
-            // Precisa de pelo menos 50% letras
-            var letters = (l.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
-            if (letters / l.length < 0.5) return false;
-            if (blacklist.test(l)) return false;
-            if (publisherKeywords.test(l)) return false;
-            // Descartar linhas so em MAIUSCULAS se forem curtas (provavel editora/coleccao)
-            if (l.length < 8 && l === l.toUpperCase() && !/\s/.test(l)) return false;
-            return true;
-        });
-}
-
-// Pontuar uma linha como candidata a titulo (mais caracteres alfabeticos, 2-8 palavras tipico)
-function scoreTitleLine(line) {
-    var words = line.split(/\s+/).filter(Boolean).length;
-    var letters = (line.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
-    var score = letters;
-    if (words >= 1 && words <= 8) score += 20;
-    if (words >= 2 && words <= 6) score += 10;
-    if (line.length >= 8 && line.length <= 50) score += 15;
-    // Capitulos comecados com maiuscula (titulo/Title Case)
-    if (/^[A-ZÀ-Þ]/.test(line)) score += 5;
-    return score;
-}
-
-// Extrai titulo e autor da imagem usando bounding boxes das palavras OCR
-// Palavras com fonte maior = titulo; palavras médias = autor
-function extractTitleAuthorFromOCR(ocrResult) {
-    var publisherBlacklist = /^(editora|publishers?|press|leya|bertrand|gradiva|presença|dom quixote|caminho|porto|manuscrito|topbooks|actual|lua de papel|gestão|colec[çc][aã]o|bestseller|best.?seller|autor de|tradu[çc][aã]o|edition|edi[çc][aã]o|volume|vol\.|col\.|gradiva|actual|temas|debates)$/i;
-
-    var words = (ocrResult.data.words || []).filter(function(w) {
-        var t = w.text.trim();
-        return w.confidence > 20 && t.length >= 2 && /[a-zA-ZÀ-ÿ]/.test(t) && !publisherBlacklist.test(t);
+// Converte ficheiro de imagem para base64 JPEG redimensionado (para enviar ao servidor)
+async function _imageToBase64(file, maxPx) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function() {
+            URL.revokeObjectURL(url);
+            var w = img.naturalWidth, h = img.naturalHeight;
+            var scale = (maxPx || 1200) / Math.max(w, h);
+            if (scale < 1) { w = Math.round(w * scale); h = Math.round(h * scale); }
+            var canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+        };
+        img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('img load')); };
+        img.src = url;
     });
-    if (!words.length) return { title: '', author: '' };
+}
 
-    // Calcular altura de cada palavra pelo bounding box
-    words.forEach(function(w) { w._h = w.bbox.y1 - w.bbox.y0; });
-    var maxH = Math.max.apply(null, words.map(function(w) { return w._h; }));
-    if (!maxH) return { title: '', author: '' };
+// Extrai titulo/autor/query da resposta da Vision API
+function _extractBookFromVision(data) {
+    var title = '', author = '', query = '';
+    var bookSites = /goodreads|amazon|fnac|bertrand|wook|saraiva|cultura|livraria|wikipedia|worldcat|bookdepository|thriftbooks|abebooks|librarything/i;
+    var isPersonName = function(s) { return /^[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+(\s+[A-ZÀ-Þ][a-zA-ZÀ-ÿ.\-']+)+$/.test(s.trim()); };
 
-    // Palavras grandes (>= 40% da max) = candidatos a titulo
-    var bigWords = words.filter(function(w) { return w._h >= maxH * 0.4; });
-    // Palavras médias (20-40%) = candidatos a autor
-    var medWords = words.filter(function(w) { return w._h >= maxH * 0.2 && w._h < maxH * 0.4; });
-
-    // Ordenar por ordem de leitura (linha a linha, esquerda para direita)
-    function readingOrder(a, b) {
-        var lineA = Math.round(a.bbox.y0 / (maxH * 0.7));
-        var lineB = Math.round(b.bbox.y0 / (maxH * 0.7));
-        return lineA !== lineB ? lineA - lineB : a.bbox.x0 - b.bbox.x0;
-    }
-    bigWords.sort(readingOrder);
-    medWords.sort(readingOrder);
-
-    var title = bigWords.map(function(w) { return w.text; }).join(' ').replace(/\s+/g, ' ').trim();
-
-    // Autor: sequência de palavras capitalizadas no texto médio
-    var authorParts = [];
-    medWords.forEach(function(w) {
-        if (/^[A-ZÀ-Þ][a-zA-ZÀ-ÿ]/.test(w.text) || (w.text.length <= 3 && authorParts.length > 0)) {
-            authorParts.push(w.text);
+    // 1ª fonte: titulos das páginas com imagens correspondentes (mais fiável)
+    var patterns = [
+        /^(.+?)\s+(?:by|de|por)\s+(.+?)(?:\s*[|\-–—]|$)/i,   // "Title by Author"
+        /^(.+?)\s*[|\-–—]\s*(.+?)\s*[|\-–—]/,                  // "Title - Author - Site"
+        /^(.+?)\s*[|\-–—]\s*([A-ZÀ-Þ][a-zA-ZÀ-ÿ. ]+)$/        // "Title - Author Name"
+    ];
+    var pages = (data.webPages || []).sort(function(a, b) {
+        return (bookSites.test(b.url) ? 1 : 0) - (bookSites.test(a.url) ? 1 : 0);
+    });
+    for (var i = 0; i < pages.length && !title; i++) {
+        var pt = (pages[i].title || '').replace(/\s+/g, ' ').trim();
+        if (!pt) continue;
+        for (var j = 0; j < patterns.length && !title; j++) {
+            var m = pt.match(patterns[j]);
+            if (m && m[1].length > 2 && m[2].length > 2) {
+                var t = m[1].replace(/\(.*?\)/g, '').trim();
+                var a = m[2].trim().split(/[|,]/)[0].trim();
+                if (t.length > 2 && !/^\d+$/.test(t)) { title = t; author = a; }
+            }
         }
-    });
-    var author = authorParts.slice(0, 4).join(' ').trim();
+    }
 
-    return { title: title, author: author };
+    // 2ª fonte: web entities (Google identifica o conteúdo da imagem)
+    if (!title && data.webEntities && data.webEntities.length) {
+        var ents = data.webEntities.filter(function(e) { return e.score > 0.45; });
+        var nameEnt = ents.find(function(e) { return isPersonName(e.description); });
+        var titleEnt = ents.find(function(e) { return !isPersonName(e.description) && e.description.length > 3; });
+        title = titleEnt ? titleEnt.description : (ents[0] ? ents[0].description : '');
+        author = nameEnt ? nameEnt.description : '';
+    }
+
+    // 3ª fonte: texto OCR do Vision (muito mais limpo que Tesseract em fotos)
+    if (!title && data.text) {
+        var lines = data.text.split('\n')
+            .map(function(l) { return l.trim(); })
+            .filter(function(l) { return l.length > 2 && /[a-zA-ZÀ-ÿ]{2}/.test(l); });
+        title = lines[0] || '';
+        if (!author && lines.length > 1 && isPersonName(lines[1])) author = lines[1];
+        query = lines.slice(0, 3).join(' ');
+    }
+
+    if (!query) query = (title + ' ' + author).trim();
+    return { title: title, author: author, query: query };
+}
+
+// Pesquisa multi-estratégia no Google Books + Open Library com a query da Vision
+async function _coverMultiSearch(query, hintTitle, hintAuthor) {
+    var results = [], seenKeys = new Set();
+
+    var queries = [
+        query,
+        hintTitle && hintTitle !== query ? hintTitle : null,
+        hintTitle && hintAuthor ? 'intitle:"' + hintTitle.split(' ').slice(0, 3).join(' ') + '"' : null,
+        hintAuthor ? query + ' inauthor:' + hintAuthor.split(' ').pop() : null,
+    ].filter(Boolean).filter(function(q, i, a) { return a.indexOf(q) === i; }).slice(0, 4);
+
+    for (var qi = 0; qi < queries.length && results.length < 10; qi++) {
+        var q = queries[qi];
+        var [gbResp, olResp] = await Promise.allSettled([
+            fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=6&orderBy=relevance').then(function(r){return r.json();}),
+            fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=4').then(function(r){return r.json();})
+        ]);
+        if (gbResp.status === 'fulfilled' && gbResp.value.items) {
+            gbResp.value.items.forEach(function(item) {
+                var k = 'gb:' + (item.volumeInfo.title||'') + '|' + ((item.volumeInfo.authors||[]).join(','));
+                if (!seenKeys.has(k)) { seenKeys.add(k); results.push({ source:'gb', item:item, _score: scoreMatch(item.volumeInfo.title, item.volumeInfo.authors, hintTitle||query, hintAuthor||'') }); }
+            });
+        }
+        if (olResp.status === 'fulfilled' && olResp.value.docs) {
+            olResp.value.docs.forEach(function(doc) {
+                var k = 'ol:' + (doc.key||doc.title);
+                if (!seenKeys.has(k)) { seenKeys.add(k); results.push({ source:'ol', doc:doc, _score: scoreMatch(doc.title, doc.author_name, hintTitle||query, hintAuthor||'') }); }
+            });
+        }
+    }
+    results.sort(function(a, b) { return b._score - a._score; });
+    return results;
+}
+
+// Mostra resultados de pesquisa por capa no painel apiResults
+function _renderCoverResults(results, queryText, opts) {
+    opts = opts || {};
+    document.getElementById('apiQuery').value = (queryText || '').substring(0, 80);
+    var rd = document.getElementById('apiResults');
+    rd.classList.add('visible');
+    rd.innerHTML = '';
+    results.slice(0, 12).forEach(function(r) {
+        rd.appendChild(r.source === 'ol' ? buildOLResultItem(r.doc) : buildGBResultItem(r.item));
+    });
+    var isImport = _importQueue.length > 0 && _importIdx < _importQueue.length;
+    if (isImport) {
+        var remaining = _importQueue.length - _importIdx - 1;
+        var nextDiv = document.createElement('div');
+        nextDiv.style.cssText = 'padding:10px;text-align:center;border-top:1px solid var(--border);';
+        nextDiv.innerHTML = '<button class="btn btn-outline btn-sm" onclick="_importSkipToNext()">⏭ Próxima foto' + (remaining > 0 ? ' (' + remaining + ' restantes)' : '') + '</button>';
+        rd.appendChild(nextDiv);
+        _importIdx++;
+    }
+    showToast('Encontrei ' + results.length + ' resultado' + (results.length !== 1 ? 's' : '') + '. Escolhe o correcto.', 'success');
 }
 
 async function handleCoverScan(event) {
@@ -3438,7 +3488,7 @@ async function handleCoverScan(event) {
     await _processCoverFile(file);
 }
 
-// Núcleo de processamento de uma foto de capa — usado tanto pelo scan individual como pelo import em lote
+// Núcleo de processamento de uma foto de capa
 async function _processCoverFile(file, opts) {
     opts = opts || {};
     var overlay = document.getElementById('coverScanOverlay');
@@ -3446,16 +3496,14 @@ async function _processCoverFile(file, opts) {
     var status  = document.getElementById('coverScanStatus');
     var progressBar = document.getElementById('coverScanProgressBar');
 
-    if (!opts.keepOverlay) {
-        overlay.classList.add('visible');
-    }
+    if (!opts.keepOverlay) overlay.classList.add('visible');
     status.textContent = opts.label || 'A analisar imagem...';
     progressBar.style.width = '5%';
 
     var imgUrl = URL.createObjectURL(file);
     preview.innerHTML = '<img src="' + imgUrl + '" style="width:100%;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">';
 
-    // PASSO 1: código de barras (funciona se o utilizador fotografar o verso)
+    // PASSO 1: código de barras / ISBN (funciona se fotografar o verso)
     try {
         status.textContent = 'A procurar código de barras...';
         progressBar.style.width = '15%';
@@ -3473,46 +3521,114 @@ async function _processCoverFile(file, opts) {
         }
     } catch(e) {}
 
-    // PASSO 2: OCR — ler texto da capa
+    // PASSO 2: Google Cloud Vision API (via servidor Vercel)
+    // — Web Detection faz reverse image search e identifica capas indexadas na web
+    try {
+        status.textContent = 'A identificar livro por imagem...';
+        progressBar.style.width = '20%';
+
+        var base64 = await _imageToBase64(file, 1200);
+        progressBar.style.width = '35%';
+        status.textContent = 'A consultar base de dados de imagens...';
+
+        var vResp = await fetch('/api/identify-book', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: base64 })
+        });
+
+        if (vResp.ok) {
+            var vData = await vResp.json();
+            progressBar.style.width = '60%';
+            var bookInfo = _extractBookFromVision(vData);
+
+            if (bookInfo.query) {
+                status.textContent = 'A pesquisar livro...';
+                var results = await _coverMultiSearch(bookInfo.query, bookInfo.title, bookInfo.author);
+                progressBar.style.width = '100%';
+                await new Promise(function(r){ setTimeout(r, 250); });
+                overlay.classList.remove('visible');
+                URL.revokeObjectURL(imgUrl);
+
+                if (results.length > 0) {
+                    _renderCoverResults(results, bookInfo.query, opts);
+                } else {
+                    // Vision identificou texto mas não encontrou no Google Books — mostrar UI de edição
+                    showCoverEditUI(bookInfo.title, bookInfo.author, URL.createObjectURL(file), opts);
+                }
+                return;
+            }
+
+            // Vision correu mas não extraiu info — usar o texto OCR do Vision como fallback
+            if (vData.text) {
+                var vLines = vData.text.split('\n').filter(function(l){ return l.trim().length > 2; });
+                progressBar.style.width = '100%';
+                overlay.classList.remove('visible');
+                showCoverEditUI(vLines[0] || '', vLines[1] || '', imgUrl, opts);
+                return;
+            }
+        } else if (vResp.status === 503) {
+            // API key não configurada — avisar uma vez e continuar para OCR local
+            if (!window._visionApiHintShown) {
+                window._visionApiHintShown = true;
+                showToast('Para identificação automática por foto, configura a Google Vision API (grátis). Toca aqui para saber como.', 'info', 8000);
+            }
+        }
+    } catch(e) {
+        // Servidor indisponível — continuar para OCR local
+    }
+
+    // PASSO 3: OCR local com Tesseract (fallback)
     if (typeof Tesseract === 'undefined') {
+        progressBar.style.width = '100%';
         showCoverEditUI('', '', imgUrl, opts);
         return;
     }
 
     try {
-        var _runOCR = async function(strategy, base, span) {
-            status.textContent = 'A preparar imagem...';
-            progressBar.style.width = base + '%';
-            var proc = await preprocessCoverImage(file, strategy);
-            status.textContent = 'A ler texto...';
-            return await Tesseract.recognize(proc.dataUrl, 'por+eng', {
-                tessedit_pageseg_mode: '11',   // sparse text — ideal para capas com texto disperso
-                tessedit_ocr_engine_mode: '1',
-                logger: function(m) {
-                    if (m.status === 'recognizing text') {
-                        progressBar.style.width = (base + Math.round(m.progress * span)) + '%';
-                        status.textContent = 'A ler texto... ' + Math.round(m.progress * 100) + '%';
-                    }
+        status.textContent = 'A ler texto da capa...';
+        progressBar.style.width = '55%';
+
+        var proc = await preprocessCoverImage(file, 'auto');
+        var ocrResult = await Tesseract.recognize(proc.dataUrl, 'por+eng', {
+            tessedit_pageseg_mode: '11',
+            tessedit_ocr_engine_mode: '1',
+            logger: function(m) {
+                if (m.status === 'recognizing text') {
+                    progressBar.style.width = (55 + Math.round(m.progress * 40)) + '%';
+                    status.textContent = 'A ler texto... ' + Math.round(m.progress * 100) + '%';
                 }
-            });
-        };
+            }
+        });
 
-        // Passe 1: estratégia auto
-        var r1 = await _runOCR('auto', 20, 50);
-        var extracted = extractTitleAuthorFromOCR(r1);
-
-        // Passe 2: highcontrast se o passe 1 deu pouco texto
-        if (!extracted.title || extracted.title.split(' ').length < 2) {
-            var r2 = await _runOCR('highcontrast', 72, 24);
-            var e2 = extractTitleAuthorFromOCR(r2);
-            if (e2.title.length > extracted.title.length) extracted = e2;
-        }
+        // Extrair palavras válidas do OCR e tentar pesquisa multi-query
+        var ocrWords = (ocrResult.data.text || '').split(/\s+/)
+            .map(function(w){ return w.replace(/[^a-zA-ZÀ-ÿ]/g, ''); })
+            .filter(function(w){ return w.length >= 4; });
+        var ocrQuery = ocrWords.slice(0, 5).join(' ');
+        var ocrTitle = (ocrResult.data.text || '').split('\n')
+            .map(function(l){ return l.trim(); })
+            .filter(function(l){ return l.length > 3 && /[a-zA-ZÀ-ÿ]{2}/.test(l); })[0] || '';
 
         progressBar.style.width = '100%';
-        showCoverEditUI(extracted.title, extracted.author, imgUrl, opts);
+
+        if (ocrQuery.split(' ').length >= 2) {
+            // Tentar pesquisa directa com as palavras do OCR antes de mostrar UI manual
+            status.textContent = 'A pesquisar...';
+            var ocrResults = await _coverMultiSearch(ocrQuery, ocrTitle, '');
+            overlay.classList.remove('visible');
+            if (ocrResults.length >= 2) {
+                _renderCoverResults(ocrResults, ocrQuery, opts);
+                return;
+            }
+        }
+
+        overlay.classList.remove('visible');
+        showCoverEditUI(ocrTitle, '', imgUrl, opts);
 
     } catch(e) {
-        console.error('Erro OCR:', e);
+        progressBar.style.width = '100%';
+        overlay.classList.remove('visible');
         showCoverEditUI('', '', imgUrl, opts);
     }
 }
