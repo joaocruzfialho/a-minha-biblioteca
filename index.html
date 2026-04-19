@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 17, em 19.04.2026</span>
+                <span class="header-version">Versão 18, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -2115,6 +2115,7 @@ function exportCSV() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `biblioteca-${new Date().toISOString().split('T')[0]}.csv`; a.click();
     showToast('CSV exportado!', 'success');
+    markBackup();
 }
 
 function importLibrary(event) {
@@ -2881,7 +2882,7 @@ function dismissOnboarding() { document.getElementById('onboarding').style.displ
 (function(){
     const last = localStorage.getItem('lastBackup');
     const days = last ? Math.floor((Date.now() - parseInt(last)) / 86400000) : null;
-    if ((days === null || days > 30) && library.length > 5) {
+    if ((days === null || days > 60) && library.length > 10) {
         const msg = days === null
             ? 'Ainda não fizeste backup! Exporta os teus dados para não os perderes.'
             : 'Já passaram ' + days + ' dias sem backup. Exporta os teus dados!';
