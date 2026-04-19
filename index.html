@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 19, em 19.04.2026</span>
+                <span class="header-version">Versão 20, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -3566,12 +3566,6 @@ async function _processCoverFile(file, opts) {
                 overlay.classList.remove('visible');
                 showCoverEditUI(vLines[0] || '', vLines[1] || '', imgUrl, opts);
                 return;
-            }
-        } else if (vResp.status === 503) {
-            // API key não configurada — avisar uma vez e continuar para OCR local
-            if (!window._visionApiHintShown) {
-                window._visionApiHintShown = true;
-                showToast('Para identificação automática por foto, configura a Google Vision API (grátis). Toca aqui para saber como.', 'info', 8000);
             }
         }
     } catch(e) {
