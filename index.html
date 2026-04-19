@@ -647,7 +647,7 @@
             <span class="logo-icon">📚</span>
             <div class="header-title-block">
                 <h1>A Minha Biblioteca</h1>
-                <span class="header-version">Versão 15, em 19.04.2026</span>
+                <span class="header-version">Versão 16, em 19.04.2026</span>
             </div>
             <span class="status-indicator" id="syncStatus" title="Estado da sincronizacao"><span class="dot"></span><span id="syncText">Online</span></span>
         </div>
@@ -743,7 +743,7 @@
         <div class="api-search">
             <label>Pesquisa rapida (nome do livro ou ISBN)</label>
             <div class="api-search-row">
-                <input type="text" id="apiQuery" placeholder="Ex: O Alquimista, Memorial do Convento..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}" oninput="if(!this.value.trim()){var r=document.getElementById('apiResults');if(r){r.classList.remove('visible');r.innerHTML='';}}">
+                <input type="text" id="apiQuery" placeholder="Titulo, autor ou ISBN (13 digitos)..." onkeydown="if(event.key==='Enter'){event.preventDefault();searchBooks();}" oninput="(function(v){clearTimeout(window._apiAutoTimer);if(!v.trim()){var r=document.getElementById('apiResults');if(r){r.classList.remove('visible');r.innerHTML='';}}else{var clean=v.replace(/[-\s]/g,'');if(/^\d{10}(\d{3})?$/.test(clean)){window._apiAutoTimer=setTimeout(function(){searchBooks();},700);}}})(this.value)">
                 <button class="btn btn-accent" onclick="searchBooks()">Pesquisar</button>
                 <button class="btn-scanner" onclick="openScanner()" title="Ler codigo de barras com a camera">📷 ISBN</button>
                 <button class="btn-scanner" onclick="openCoverScanner()" title="Fotografar capa ou verso do livro. O codigo de barras no verso e lido automaticamente." style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;">📚 Capa</button>
@@ -754,12 +754,16 @@
         </div>
 
         <div class="form-row">
-            <div class="form-group"><label>Titulo *</label><input type="text" id="title" placeholder="Nome do livro"></div>
-            <div class="form-group"><label>Autor</label><input type="text" id="author" placeholder="Nome do autor"></div>
+            <div class="form-group"><label>Titulo *</label><input type="text" id="title" placeholder="Nome do livro" oninput="saveDraft()"></div>
+            <div class="form-group"><label>Autor</label><input type="text" id="author" placeholder="Nome do autor" oninput="saveDraft()"></div>
         </div>
         <div class="form-row">
             <div class="form-group"><label>Subtitulo</label><input type="text" id="subtitle" placeholder="Subtitulo do livro"></div>
             <div class="form-group"><label>Editora</label><input type="text" id="publisherMain" placeholder="Ex: Porto Editora, Leya..."></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>ISBN <button type="button" onclick="var v=document.getElementById('isbn').value.trim();if(v){navigator.clipboard.writeText(v).then(function(){showToast('ISBN copiado!','success');});}else{showToast('Nenhum ISBN para copiar.','warning');}" style="background:none;border:none;cursor:pointer;font-size:0.85em;color:var(--accent);" title="Copiar ISBN">📋</button></label><input type="text" id="isbn" placeholder="Ex: 9789722067690" inputmode="numeric" spellcheck="false" autocomplete="off" oninput="(function(v){clearTimeout(window._isbnFieldTimer);var clean=v.replace(/[-\s]/g,'');if(/^\d{10}(\d{3})?$/.test(clean)){document.getElementById('apiQuery').value=clean;window._isbnFieldTimer=setTimeout(function(){searchBooks();},800);}})(this.value)"></div>
+            <div class="form-group"><label>Ano de publicação</label><input type="number" id="year" placeholder="Ex: 2024" min="1000" max="2030" spellcheck="false" inputmode="numeric"></div>
         </div>
 
         <div class="form-group">
@@ -774,6 +778,10 @@
                     <label class="btn btn-outline btn-sm cover-upload-btn">Fotografar / Carregar<input type="file" id="coverFile" accept="image/*" capture="environment" onchange="handleCoverUpload(event)" style="display:none;"></label>
                     <label class="btn btn-outline btn-sm cover-upload-btn">Escolher da galeria<input type="file" id="coverGallery" accept="image/*" onchange="handleCoverUpload(event)" style="display:none;"></label>
                     <p class="api-hint">Ou arrasta uma imagem para aqui</p>
+                    <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+                        <input type="text" id="coverUrlInput" placeholder="Ou cola aqui o URL da capa (https://...)" style="flex:1;font-size:0.82em;padding:7px 10px;" oninput="document.getElementById('coverUrlApplyBtn').style.display=this.value.trim()?'inline-block':'none';">
+                        <button id="coverUrlApplyBtn" type="button" class="btn btn-accent btn-sm" style="display:none;white-space:nowrap;" onclick="var u=document.getElementById('coverUrlInput').value.trim();if(u){setCoverPreview(u.replace(/^http:/i,'https:'));document.getElementById('coverUrlInput').value='';this.style.display='none';showToast('Capa aplicada!','success');}">Aplicar</button>
+                    </div>
                 </div>
             </div>
             <input type="hidden" id="cover" value="">
@@ -797,12 +805,10 @@
                 <div class="form-row-3">
                     <div class="form-group"><label>Paginas</label><input type="number" id="pages" placeholder="Ex: 320" min="0" spellcheck="false" inputmode="numeric"></div>
                     <div class="form-group"><label>Paginas lidas</label><input type="number" id="pagesRead" placeholder="0" min="0" spellcheck="false" inputmode="numeric"></div>
-                    <div class="form-group"><label>Ano</label><input type="number" id="year" placeholder="Ex: 2024" min="1000" max="2030" spellcheck="false" inputmode="numeric"></div>
-                </div>
-                <div class="form-row-3">
-                    <div class="form-group"><label>Editora</label><input type="text" id="publisher" placeholder="Ex: Porto Editora"></div>
-                    <div class="form-group"><label>ISBN <button type="button" onclick="var v=document.getElementById('isbn').value.trim();if(v){navigator.clipboard.writeText(v).then(function(){showToast('ISBN copiado!','success');});}" style="background:none;border:none;cursor:pointer;font-size:0.85em;color:var(--accent);" title="Copiar ISBN">📋</button></label><input type="text" id="isbn" placeholder="Ex: 9789722067690" pattern="[0-9X]{10,13}" autocomplete="isbn" spellcheck="false" inputmode="numeric"></div>
                     <div class="form-group"><label>Idioma</label><input type="text" id="language" placeholder="Portugues" list="langList"><datalist id="langList"><option value="Portugues"><option value="Ingles"><option value="Frances"><option value="Espanhol"><option value="Alemao"></datalist></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Editora (completa)</label><input type="text" id="publisher" placeholder="Ex: Porto Editora, Grupo Leya..."></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Serie/Colecao</label><input type="text" id="series" placeholder="Ex: Harry Potter #1"></div>
@@ -1644,9 +1650,10 @@ function saveBook() {
     const title = document.getElementById('title').value.trim();
     if (!title) { showToast('O titulo e obrigatorio!', 'error'); return; }
 
-    // Duplicate check
+    // Duplicate check (normaliza diacriticos para apanhar "O Crime do Padre Amaro" vs "o crime do padre amaro" etc)
     const editIdx = parseInt(document.getElementById('editIndex').value);
-    const dup = library.findIndex((b, i) => b.title.toLowerCase() === title.toLowerCase() && i !== editIdx);
+    const normT = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+    const dup = library.findIndex((b, i) => normT(b.title) === normT(title) && i !== editIdx);
     if (dup >= 0 && editIdx < 0) {
         showToast('Ja existe um livro com este titulo: "' + library[dup].title + '"', 'warning', 'editBook(' + dup + ')', 'Ver existente');
         return;
@@ -1673,6 +1680,8 @@ function saveBook() {
     if (data.readingStatus === 'reading' && !data.readStart) data.readStart = today;
     if (data.readingStatus === 'read' && data.pages > 0) data.pagesRead = data.pages;
 
+    var savedTitle = title;
+    var isNewBook = editIdx < 0;
     if (editIdx >= 0) {
         library[editIdx] = { ...library[editIdx], ...data };
         showToast('Livro atualizado!', 'success');
@@ -1681,6 +1690,19 @@ function saveBook() {
         showToast('Livro adicionado!', 'success');
     }
     save(); clearForm(); renderBooks();
+
+    // Após guardar: scroll e destaque no livro na grelha
+    if (isNewBook) {
+        setTimeout(function() {
+            var cards = document.querySelectorAll('.book-card');
+            var target = null;
+            cards.forEach(function(c) { var t = c.querySelector('.book-title'); if (t && t.textContent.trim() === savedTitle) target = c; });
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                flashElement(target, 2500);
+            }
+        }, 350);
+    }
 }
 
 function editBook(idx) {
@@ -1721,6 +1743,42 @@ function clearForm() {
     document.getElementById('apiResults').classList.remove('visible');
     removeCover();
     updateRatingInput(0);
+    localStorage.removeItem('addBookDraft');
+}
+
+// Guardar rascunho do formulário em localStorage (chamado nos campos principais)
+function saveDraft() {
+    var editIdx = parseInt(document.getElementById('editIndex').value);
+    if (editIdx >= 0) return; // nao guardar rascunho quando editando livro existente
+    var draft = {};
+    ['title','author','subtitle','publisherMain','isbn','year','summary','genre','readingStatus','cover'].forEach(function(f) {
+        var el = document.getElementById(f); if (el) draft[f] = el.value;
+    });
+    if (draft.title && draft.title.trim()) localStorage.setItem('addBookDraft', JSON.stringify(draft));
+    else localStorage.removeItem('addBookDraft');
+}
+
+// Restaurar rascunho guardado (chamado quando o formulário é aberto)
+function restoreDraft() {
+    var raw = localStorage.getItem('addBookDraft');
+    if (!raw) return;
+    try {
+        var draft = JSON.parse(raw);
+        if (!draft.title || !draft.title.trim()) return;
+        ['title','author','subtitle','publisherMain','isbn','year','summary','genre','readingStatus'].forEach(function(f) {
+            var el = document.getElementById(f); if (el && draft[f]) el.value = draft[f];
+        });
+        if (draft.cover) setCoverPreview(draft.cover);
+        showToast('Rascunho recuperado: "' + esc(draft.title.trim()) + '"', 'info');
+    } catch(e) {}
+}
+
+// Animar um elemento com flash de destaque (amarelo -> normal)
+function flashElement(el, duration) {
+    if (!el) return;
+    el.style.transition = 'box-shadow 0.4s ease';
+    el.style.boxShadow = '0 0 0 3px var(--accent)';
+    setTimeout(function() { el.style.boxShadow = ''; }, duration || 1800);
 }
 
 function cancelEdit() {
@@ -1839,7 +1897,7 @@ function showDetail(idx) {
 function toggleForm() {
     const f = document.getElementById('addBookForm');
     if (f.classList.contains('visible')) cancelEdit();
-    else { clearForm(); f.classList.add('visible'); f.scrollIntoView({behavior:'smooth'}); setTimeout(()=>{ var tf = document.getElementById('title'); if(tf) tf.focus(); },150); }
+    else { clearForm(); f.classList.add('visible'); f.scrollIntoView({behavior:'smooth'}); restoreDraft(); setTimeout(()=>{ var aq = document.getElementById('apiQuery'); if(aq) aq.focus(); },150); }
 }
 
 function searchByTag(tag) {
@@ -2510,11 +2568,21 @@ async function searchByTitle(query, rd) {
         }
     });
     if (olDocs.length === 0 && gbItems.length === 0) {
-        rd.innerHTML = '<div class="api-loading">Nenhum resultado encontrado. Tenta pesquisar pelo ISBN do livro para resultados mais precisos.</div>';
+        rd.innerHTML =
+            '<div class="api-loading" style="color:var(--warning);">Sem resultados para <em>' + esc(query) + '</em>.<br><span style="font-size:0.82em;opacity:0.8;">Tenta pelo ISBN, pelo titulo original ou em inglês.</span></div>' +
+            '<div style="padding:10px;text-align:center;"><button class="btn btn-outline btn-sm" onclick="document.getElementById(\'title\').value=document.getElementById(\'apiQuery\').value.trim();document.getElementById(\'apiResults\').classList.remove(\'visible\');document.getElementById(\'title\').focus();showToast(\'Preenche os campos manualmente e guarda.\',\'info\');">✏️ Adicionar manualmente</button></div>';
         return;
     }
 
     rd.innerHTML = '';
+
+    var _totalResults = olDocs.length + gbItems.length;
+    if (_totalResults > 0) {
+        var _rHdr = document.createElement('div');
+        _rHdr.style.cssText = 'padding:5px 10px;font-size:0.78em;color:var(--text-muted);border-bottom:1px solid var(--border);';
+        _rHdr.textContent = _totalResults + ' resultado' + (_totalResults === 1 ? '' : 's') + ' encontrado' + (_totalResults === 1 ? '' : 's');
+        rd.appendChild(_rHdr);
+    }
 
     // Mostrar resultados Open Library primeiro (melhores para PT)
     olDocs.forEach(function(doc) {
@@ -2621,8 +2689,11 @@ async function selectOLResult(doc) {
             year: doc.first_publish_year || '',
             publisher: publishers, publisherMain: publishers, isbn: isbn, language: 'Portugues'
         });
-        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta e guarda.</div>';
+        saveDraft();
+        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">✓ Preenchido! Revê e clica em Guardar.</div>';
         setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
+        var form = document.getElementById('addBookForm');
+        if (form) { setTimeout(function(){ form.scrollIntoView({behavior:'smooth',block:'start'}); flashElement(document.getElementById('title'), 2000); }, 300); }
     } catch(e) {
         console.error('Erro OL detalhes:', e);
         rd.innerHTML = '<div class="api-loading">Erro ao carregar detalhes.</div>';
@@ -2662,8 +2733,11 @@ async function selectGoogleBook(item) {
             publisher: v.publisher || '', publisherMain: v.publisher || '',
             isbn: isbn, language: lang
         });
-        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">Preenchido! Ajusta e guarda.</div>';
+        saveDraft();
+        rd.innerHTML = '<div class="api-loading" style="color:var(--success);">✓ Preenchido! Revê e clica em Guardar.</div>';
         setTimeout(function(){ rd.classList.remove('visible'); }, 2500);
+        var form = document.getElementById('addBookForm');
+        if (form) { setTimeout(function(){ form.scrollIntoView({behavior:'smooth',block:'start'}); flashElement(document.getElementById('title'), 2000); }, 300); }
     } catch(e) {
         console.error('Erro GB detalhes:', e);
         rd.innerHTML = '<div class="api-loading">Erro ao carregar detalhes.</div>';
