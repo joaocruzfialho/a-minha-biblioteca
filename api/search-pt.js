@@ -1,8 +1,7 @@
 // Vercel Serverless Function — pesquisa livros em Wook.pt e Bertrand.pt
-// Ambas as lojas bloqueiam IPs de datacenter (Vercel/AWS) — usar ScrapingBee.
-// Wook: Cloudflare forte -> premium_proxy (25 créditos)
-// Bertrand: bot detection simples -> sem premium (1 crédito)
-// Env: SCRAPINGBEE_KEY (obrigatório)
+// Tentativa direta (sem ScrapingBee). Muitas vezes o Cloudflare bloqueia IPs
+// de datacenter; nesse caso devolve-se array vazio e o frontend continua
+// com Google Books + OpenLibrary em paralelo.
 
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,15 +12,10 @@ export default async function handler(req, res) {
     if (!q || q.trim().length < 2) return res.status(400).json({ error: 'q required' });
 
     const query = q.trim().substring(0, 150);
-    const key = process.env.SCRAPINGBEE_KEY;
-
-    if (!key) {
-        return res.status(200).json({ results: [], error: 'SCRAPINGBEE_KEY env var missing' });
-    }
 
     const [wookRes, bertrandRes] = await Promise.allSettled([
-        fetchStore(key, `https://www.wook.pt/pesquisa?keyword=${encodeURIComponent(query)}`, true, 'wook'),
-        fetchStore(key, `https://www.bertrand.pt/pesquisa/${encodeURIComponent(query)}`, false, 'bertrand'),
+        fetchStore(`https://www.wook.pt/pesquisa?keyword=${encodeURIComponent(query)}`, 'wook'),
+        fetchStore(`https://www.bertrand.pt/pesquisa/${encodeURIComponent(query)}`, 'bertrand'),
     ]);
 
     const wook = wookRes.status === 'fulfilled' ? wookRes.value : { books: [], meta: { error: String(wookRes.reason).slice(0, 200) } };
@@ -41,23 +35,34 @@ export default async function handler(req, res) {
     return res.status(200).json(payload);
 }
 
-async function fetchStore(key, targetUrl, premium, source) {
-    const params = new URLSearchParams({
-        api_key: key,
-        url: targetUrl,
-        country_code: 'pt',
-        render_js: 'false',
-    });
-    if (premium) params.set('premium_proxy', 'true');
-    const url = `https://app.scrapingbee.com/api/v1/?${params}`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(28000) });
-    const meta = { status: r.status, bytes: 0, matches: 0 };
-    if (!r.ok) return { books: [], meta };
-    const html = await r.text();
-    meta.bytes = html.length;
-    const books = parseProductList(html, source);
-    meta.matches = books.length;
-    return { books, meta };
+async function fetchStore(targetUrl, source) {
+    const meta = { status: 0, bytes: 0, matches: 0 };
+    try {
+        const r = await fetch(targetUrl, {
+            signal: AbortSignal.timeout(8000),
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': source === 'wook' ? 'https://www.wook.pt/' : 'https://www.bertrand.pt/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Upgrade-Insecure-Requests': '1',
+            },
+        });
+        meta.status = r.status;
+        if (!r.ok) return { books: [], meta };
+        const html = await r.text();
+        meta.bytes = html.length;
+        const books = parseProductList(html, source);
+        meta.matches = books.length;
+        return { books, meta };
+    } catch (e) {
+        meta.error = String(e).slice(0, 200);
+        return { books: [], meta };
+    }
 }
 
 function parseProductList(html, source) {
