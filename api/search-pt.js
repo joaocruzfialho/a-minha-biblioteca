@@ -1,123 +1,134 @@
 // Vercel Serverless Function — pesquisa livros em Wook.pt e Bertrand.pt
-// Wook bloqueia IPs de datacenter (Cloudflare) — usa ScrapingBee (env SCRAPINGBEE_KEY).
-// Bertrand não bloqueia — fetch direto.
+// Ambas as lojas bloqueiam IPs de datacenter (Vercel/AWS) — usar ScrapingBee.
+// Wook: Cloudflare forte -> premium_proxy (25 créditos)
+// Bertrand: bot detection simples -> sem premium (1 crédito)
+// Env: SCRAPINGBEE_KEY (obrigatório)
 
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'GET') return res.status(405).end();
 
-    const { q } = req.query;
+    const { q, debug } = req.query;
     if (!q || q.trim().length < 2) return res.status(400).json({ error: 'q required' });
 
     const query = q.trim().substring(0, 150);
+    const key = process.env.SCRAPINGBEE_KEY;
 
-    const [wook, bertrand] = await Promise.all([
-        fetchWook(query).catch(() => []),
-        fetchBertrand(query).catch(() => []),
+    if (!key) {
+        return res.status(200).json({ results: [], error: 'SCRAPINGBEE_KEY env var missing' });
+    }
+
+    const [wookRes, bertrandRes] = await Promise.allSettled([
+        fetchStore(key, `https://www.wook.pt/pesquisa?keyword=${encodeURIComponent(query)}`, true, 'wook'),
+        fetchStore(key, `https://www.bertrand.pt/pesquisa/${encodeURIComponent(query)}`, false, 'bertrand'),
     ]);
 
-    const all = [...wook, ...bertrand];
+    const wook = wookRes.status === 'fulfilled' ? wookRes.value : { books: [], meta: { error: String(wookRes.reason).slice(0, 200) } };
+    const bertrand = bertrandRes.status === 'fulfilled' ? bertrandRes.value : { books: [], meta: { error: String(bertrandRes.reason).slice(0, 200) } };
+
+    const all = [...wook.books, ...bertrand.books];
     const seen = new Set();
     const unique = all.filter(b => {
-        const key = (b.id || '') + '|' + (b.title || '').toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
+        const k = (b.id || '') + '|' + (b.title || '').toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
         return true;
     });
 
-    return res.status(200).json({ results: unique.slice(0, 12) });
+    const payload = { results: unique.slice(0, 12) };
+    if (debug === '1') payload.debug = { wook: wook.meta, bertrand: bertrand.meta };
+    return res.status(200).json(payload);
 }
 
-async function fetchWook(query) {
-    const key = process.env.SCRAPINGBEE_KEY;
-    if (!key) return [];
-    const target = `https://www.wook.pt/pesquisa?keyword=${encodeURIComponent(query)}`;
-    const url = `https://app.scrapingbee.com/api/v1/?api_key=${key}&url=${encodeURIComponent(target)}&premium_proxy=true&country_code=pt&render_js=false`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
-    if (!r.ok) return [];
-    const html = await r.text();
-    return parseProductList(html, 'wook');
-}
-
-async function fetchBertrand(query) {
-    const target = `https://www.bertrand.pt/pesquisa/${encodeURIComponent(query)}`;
-    const r = await fetch(target, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
-            'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.5',
-        },
-        signal: AbortSignal.timeout(10000),
+async function fetchStore(key, targetUrl, premium, source) {
+    const params = new URLSearchParams({
+        api_key: key,
+        url: targetUrl,
+        country_code: 'pt',
+        render_js: 'false',
     });
-    if (!r.ok) return [];
+    if (premium) params.set('premium_proxy', 'true');
+    const url = `https://app.scrapingbee.com/api/v1/?${params}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(28000) });
+    const meta = { status: r.status, bytes: 0, matches: 0 };
+    if (!r.ok) return { books: [], meta };
     const html = await r.text();
-    return parseProductList(html, 'bertrand');
+    meta.bytes = html.length;
+    const books = parseProductList(html, source);
+    meta.matches = books.length;
+    return { books, meta };
 }
 
 function parseProductList(html, source) {
     const books = [];
     const seen = new Set();
+
+    // Strategy 1: anchor tags with aria-label/title (Wook)
     const linkRe = /<a[^>]+href="(\/livro\/[^"]+\/(\d+))"[^>]*(?:aria-label|title)="([^"]{2,200})"/gi;
     let m;
     while ((m = linkRe.exec(html)) !== null && books.length < 20) {
-        const href = m[1];
-        const id = m[2];
-        if (seen.has(id)) continue;
-        seen.add(id);
+        if (seen.has(m[2])) continue;
+        seen.add(m[2]);
         const title = decodeEntities(m[3]).trim();
         if (title.length < 2) continue;
-        const block = extractBlockAround(html, m.index, 3500);
-        const author = extractAuthor(block);
-        const cover = extractCover(block, source);
-        const price = extractPrice(block);
-        const host = source === 'wook' ? 'https://www.wook.pt' : 'https://www.bertrand.pt';
-        books.push({
-            id,
-            title,
-            author,
-            cover,
-            price,
-            url: host + href,
-            source,
-        });
+        books.push(buildBook(m[2], m[1], title, html, m.index, source));
     }
 
-    // Fallback: extract by data-product-name (Bertrand tags products that way)
-    if (books.length === 0 && source === 'bertrand') {
+    // Strategy 2: data-product-id/name (Bertrand)
+    if (books.length === 0) {
         const re = /data-product-id="(\d+)"[^>]*data-product-name="([^"]+)"/g;
         while ((m = re.exec(html)) !== null && books.length < 20) {
             if (seen.has(m[1])) continue;
             seen.add(m[1]);
             const block = extractBlockAround(html, m.index, 3500);
-            books.push({
-                id: m[1],
-                title: decodeEntities(m[2]).trim(),
-                author: extractAuthor(block),
-                cover: extractCover(block, source),
-                price: extractPrice(block),
-                url: `https://www.bertrand.pt/livro/-/${m[1]}`,
-                source,
-            });
+            const hrefMatch = block.match(/href="(\/livro\/[^"]+\/\d+)"/);
+            const href = hrefMatch ? hrefMatch[1] : `/livro/-/${m[1]}`;
+            books.push(buildBook(m[1], href, decodeEntities(m[2]).trim(), html, m.index, source));
+        }
+    }
+
+    // Strategy 3: bare anchor with inner text (fallback)
+    if (books.length === 0) {
+        const re = /<a[^>]+href="(\/livro\/[^"]+\/(\d+))"[^>]*>([^<]{3,200})<\/a>/gi;
+        while ((m = re.exec(html)) !== null && books.length < 20) {
+            if (seen.has(m[2])) continue;
+            seen.add(m[2]);
+            const title = decodeEntities(m[3]).trim();
+            if (title.length < 2) continue;
+            books.push(buildBook(m[2], m[1], title, html, m.index, source));
         }
     }
 
     return books;
 }
 
+function buildBook(id, href, title, html, idx, source) {
+    const block = extractBlockAround(html, idx, 3500);
+    const host = source === 'wook' ? 'https://www.wook.pt' : 'https://www.bertrand.pt';
+    return {
+        id,
+        title,
+        author: extractAuthor(block),
+        cover: extractCover(block, source),
+        price: extractPrice(block),
+        url: host + href,
+        source,
+    };
+}
+
 function extractBlockAround(html, idx, radius) {
-    return html.substring(Math.max(0, idx - 200), Math.min(html.length, idx + radius));
+    return html.substring(Math.max(0, idx - 300), Math.min(html.length, idx + radius));
 }
 
 function extractAuthor(block) {
-    const m = block.match(/class="authors"[^>]*>[\s\S]{0,600}?(?:<a[^>]*>)?\s*(?:de\s+)?([^<]{3,120})</i)
-        || block.match(/class="authors[^"]*"[^>]*>\s*<p>\s*de\s+<a[^>]*>([^<]{3,120})</i);
+    const m = block.match(/class="authors[^"]*"[^>]*>[\s\S]{0,600}?(?:<a[^>]*>)?\s*(?:de\s+)?([^<]{3,120})</i);
     return m ? decodeEntities(m[1]).trim() : '';
 }
 
 function extractCover(block, source) {
-    const host = source === 'wook' ? 'img.wook.pt' : 'img.bertrand.pt';
-    const re = new RegExp(`(?:data-src|src)="(https://${host.replace('.', '\\.')}/[^"]+)"`, 'i');
+    const hostPattern = source === 'wook' ? 'img\\.wook\\.pt' : 'img\\.bertrand\\.pt';
+    const re = new RegExp(`(?:data-src|src)="(https://${hostPattern}/[^"]+)"`, 'i');
     const m = block.match(re);
     return m ? m[1].replace(/&amp;/g, '&') : '';
 }
